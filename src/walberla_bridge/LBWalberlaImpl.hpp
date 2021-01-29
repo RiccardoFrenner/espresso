@@ -39,6 +39,9 @@
 #include "lbm/vtk/all.h"
 #include "timeloop/SweepTimeloop.h"
 
+#include "pe/rigidbody/SphereFactory.h"
+#include "pe/utility/DestroyBody.h"
+
 #include "core/mpi/Environment.h"
 #include "core/mpi/MPIManager.h"
 #include "core/mpi/MPITextFile.h"
@@ -110,6 +113,9 @@ protected:
   // Adaptors
   using VelocityAdaptor = typename lbm::Adaptor<LatticeModel>::VelocityVector;
 
+  // All currently used physics engine (pe) bodies
+  using BodyTypeTuple = std::tuple<Sphere, Plane>;
+
   /** VTK writers that are executed automatically */
   std::map<std::string, std::pair<std::shared_ptr<vtk::VTKOutput>, bool>>
       m_vtk_auto;
@@ -148,6 +154,23 @@ protected:
 
   // ResetForce sweep + external force handling
   std::shared_ptr<ResetForce<PdfField, VectorField>> m_reset_force;
+
+  // PE private members
+  // Global particle storage (for very large particles), stored on all processes
+  std::shared_ptr<BodyStorage> m_globalBodyStorage;
+
+  // Storage for pe particles
+  BlockDataID m_pe_storageID;
+
+  // coarse and fine collision detection
+  BlockDataID m_ccdID;
+  BlockDataID m_fcdID;
+
+  // pe time integrator
+  cr::HCSITS m_cr;
+
+  // view on particles to access them via their uid
+  // std::map < id_t, std::shared_ptr < #TODO: Do I really need this?
 
   size_t stencil_size() const override {
     return static_cast<size_t>(LatticeModel::Stencil::Size);
@@ -230,6 +253,33 @@ public:
     // Init and register flag field (fluid/boundary)
     m_flag_field_id = field::addFlagFieldToStorage<FlagField>(
         m_blocks, "flag field", m_n_ghost_layers);
+
+    // Init pe
+    m_globalBodyStorage = std::make_shared<BodyStorage>();
+
+    // Storage for pe particles
+    m_pe_storageID = m_blocks->addBlockData(
+        createStorageDataHandling<BodyTypeTuple>(), "PE Storage");
+
+    // coarse and fine collision detection
+    m_ccdID = m_blocks->addBlockData(
+        ccd::createHashGridsDataHandling(globalBodyStorage, storageID), "CCD");
+    m_fcdID = m_blocks->addBlockData(
+        fcd::createGenericFCDDataHandling<BodyTypeTuple,
+                                          fcd::AnalyticCollideFunctor>(),
+        "FCD");
+
+    // Init pe time integrator
+    m_cr = cr::HCSITS(m_globalBodyStorage, m_blocks, m_storageID, m_ccdID,
+                      m_fcdID);
+    m_cr.setMaxIterations(10);
+    m_cr.setRelaxationModel(cr::HardContactSemiImplicitTimesteppingSolvers::
+                                ApproximateInelasticCoulombContactByDecoupling);
+    m_cr.setRelaxationParameter(real_t(0.7));
+    m_cr.setGlobalLinearAcceleration(Vec3(0, 0, 0));
+
+    // Init pe body type ids
+    SetBodyTypeIDs<BodyTypeTuple>::execute();
   };
 
   void setup_with_valid_lattice_model(double density) {
@@ -754,6 +804,32 @@ public:
       pdf_field->resetLatticeModel(*m_lattice_model);
       pdf_field->latticeModel().configure(*b, *m_blocks);
     }
+  }
+
+  // pe interface functions
+  bool add_pe_particle(id_t uid, const Utils::Vector3d &gpos, double radius,
+                       const Utils::Vector3d &linVel) override {
+    pe::SphereID sp =
+        pe::createSphere(*m_globalBodyStorage, *m_blocks, m_storageID, uid,
+                         to_vector3(gpos), real_c(radius), material);
+    if (sp != nullptr) {
+      sp->setLinearVel(to_vector3(linVel));
+      return true;
+    }
+    return false;
+  }
+
+  /** @brief removes all rigid bodies matching the given uid */
+  /// \attention Has to be called the same way on all processes to work
+  /// correctly! TODO: Remove this attention mark when figured out
+  void remove_pe_particle(id_t uid) override {
+    pe::destroyBodyByUID(m_globalStorage, m_blocks, m_storageID, uid);
+  }
+
+  /** @brief Call after all pe particles have been added to sync them on all
+   * blocks */
+  void sync_pe_particles() override {
+    pe::syncNextNeighbors<BodyTypeTuple>(*m_blocks, m_storageID);
   }
 
   ~LBWalberlaImpl() override = default;

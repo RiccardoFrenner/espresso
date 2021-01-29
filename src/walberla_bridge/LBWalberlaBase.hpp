@@ -127,6 +127,13 @@ public:
   virtual bool pos_in_local_domain(const Utils::Vector3d &pos) const = 0;
   virtual bool pos_in_local_halo(const Utils::Vector3d &pos) const = 0;
 
+  // PE
+  virtual bool add_pe_particle(id_t uid, const Utils::Vector3d &gpos,
+                               double radius,
+                               const Utils::Vector3d &linVel) = 0;
+  virtual void remove_pe_particle(id_t uid) = 0;
+  virtual void sync_pe_particles() = 0;
+
   /** @brief Create a VTK observable.
    *
    *  @param delta_N          Write frequency, if 0 write a single frame,
