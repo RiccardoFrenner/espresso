@@ -173,10 +173,10 @@ protected:
   std::shared_ptr<pe::cr::HCSITS> m_cr;
 
   // calculates particle information on call
-  std::shared_ptr<pe::BodyStatistics> m_bodyStats;
+  // std::shared_ptr<pe::BodyStatistics> m_bodyStats;
 
   // view on particles to access them via their uid
-  // std::map < id_t, std::shared_ptr < #TODO: Do I really need this?
+  std::map<std::uint64_t, pe::BodyID> m_pe_particles;
 
   size_t stencil_size() const override {
     return static_cast<size_t>(LatticeModel::Stencil::Size);
@@ -292,8 +292,9 @@ public:
     pe::SetBodyTypeIDs<BodyTypeTuple>::execute();
 
     // Init body statistics
-    m_bodyStats = std::make_shared<BodyStatistics>(m_blocks, m_pe_storageID);
-    (*m_bodyStats)();
+    // m_bodyStats =
+    //     std::make_shared<pe::BodyStatistics>(m_blocks, m_pe_storageID);
+    // (*m_bodyStats)();
   };
 
   void setup_with_valid_lattice_model(double density) {
@@ -821,6 +822,19 @@ public:
   }
 
   // pe utility functions
+  boost::optional<std::shared_ptr<pe::RigidBody>>
+  get_pe_particle(std::uint64_t uid) {
+    for (auto blockIt = m_blocks->begin(); blockIt != m_blocks->end();
+         ++blockIt) {
+      for (auto bodyIt = pe::LocalBodyIterator::begin(*blockIt, m_pe_storageID);
+           bodyIt != pe::LocalBodyIterator::end(); ++bodyIt) {
+        if (uid == bodyIt->getID()) {
+          return {std::shared_ptr<pe::RigidBody>(bodyIt.getBodyID())};
+        }
+      }
+    }
+    return {};
+  }
 
   // pe interface functions
   bool add_pe_particle(std::uint64_t uid, const Utils::Vector3d &gpos,
@@ -857,19 +871,24 @@ public:
   }
 
   boost::optional<Utils::Vector3d>
-  get_particle_velocity(std::uint64_t uid) override {
+  get_particle_velocity(std::uint64_t uid) const override {
+    auto p = get_pe_particle(uid);
+    // if (p) {
+    //   auto pp = to_vector3d((*p)->getLinearVel());
+    //   return {pp};
+    // }
+    return {};
+  }
+  boost::optional<Utils::Vector3d>
+  get_particle_angular_velocity(std::uint64_t uid) const override {
     return {Utils::Vector3d{0, 0, 0}};
   }
   boost::optional<Utils::Vector3d>
-  get_particle_angular_velocity(std::uint64_t uid) override {
+  get_particle_orientation(std::uint64_t uid) const override {
     return {Utils::Vector3d{0, 0, 0}};
   }
   boost::optional<Utils::Vector3d>
-  get_particle_orientation(std::uint64_t uid) override {
-    return {Utils::Vector3d{0, 0, 0}};
-  }
-  boost::optional<Utils::Vector3d>
-  get_particle_position(std::uint64_t uid) override {
+  get_particle_position(std::uint64_t uid) const override {
     return {Utils::Vector3d{0, 0, 0}};
   }
 
