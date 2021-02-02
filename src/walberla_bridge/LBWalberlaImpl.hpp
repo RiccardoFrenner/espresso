@@ -822,16 +822,10 @@ public:
   }
 
   // pe utility functions
-  boost::optional<std::shared_ptr<pe::RigidBody>>
-  get_pe_particle(std::uint64_t uid) {
-    for (auto blockIt = m_blocks->begin(); blockIt != m_blocks->end();
-         ++blockIt) {
-      for (auto bodyIt = pe::LocalBodyIterator::begin(*blockIt, m_pe_storageID);
-           bodyIt != pe::LocalBodyIterator::end(); ++bodyIt) {
-        if (uid == bodyIt->getID()) {
-          return {std::shared_ptr<pe::RigidBody>(bodyIt.getBodyID())};
-        }
-      }
+  boost::optional<pe::BodyID> get_pe_particle(std::uint64_t uid) const {
+    auto it = m_pe_particles.find(uid);
+    if (it != m_pe_particles.end()) {
+      return {it->second};
     }
     return {};
   }
@@ -839,6 +833,9 @@ public:
   // pe interface functions
   bool add_pe_particle(std::uint64_t uid, const Utils::Vector3d &gpos,
                        double radius, const Utils::Vector3d &linVel) override {
+    if (m_pe_particles.find(uid) != m_pe_particles.end()) {
+      return false;
+    }
     // TODO: Pass material as argument? Is there an espresso material object? Or
     // have some predefined materials?
     pe::MaterialID material =
@@ -850,17 +847,20 @@ public:
                          m_pe_storageID, uid, gpos_, real_c(radius));
     if (sp != nullptr) {
       sp->setLinearVel(to_vector3(linVel));
+      m_pe_particles[uid] = sp;
       return true;
     }
     return false;
   }
 
   /** @brief removes all rigid bodies matching the given uid */
-  /// \attention Has to be called the same way on all processes to work
-  /// correctly! TODO: Remove this attention mark when figured out
   void remove_pe_particle(std::uint64_t uid) override {
-    pe::destroyBodyByUID(*m_globalBodyStorage, m_blocks->getBlockForest(),
-                         m_pe_storageID, uid);
+    auto it = m_pe_particles.find(uid);
+    if (it != m_pe_particles.end()) {
+      m_pe_particles.erase(it);
+      pe::destroyBodyByUID(*m_globalBodyStorage, m_blocks->getBlockForest(),
+                           m_pe_storageID, uid);
+    }
   }
 
   /** @brief Call after all pe particles have been added to sync them on all
@@ -873,23 +873,34 @@ public:
   boost::optional<Utils::Vector3d>
   get_particle_velocity(std::uint64_t uid) const override {
     auto p = get_pe_particle(uid);
-    // if (p) {
-    //   auto pp = to_vector3d((*p)->getLinearVel());
-    //   return {pp};
-    // }
+    if (p) {
+      return {to_vector3d((*p)->getLinearVel())};
+    }
     return {};
   }
   boost::optional<Utils::Vector3d>
   get_particle_angular_velocity(std::uint64_t uid) const override {
-    return {Utils::Vector3d{0, 0, 0}};
+    auto p = get_pe_particle(uid);
+    if (p) {
+      return {to_vector3d((*p)->getAngularVel())};
+    }
+    return {};
   }
-  boost::optional<Utils::Vector3d>
+  boost::optional<Utils::Quaternion<double>>
   get_particle_orientation(std::uint64_t uid) const override {
-    return {Utils::Vector3d{0, 0, 0}};
+    auto p = get_pe_particle(uid);
+    if (p) {
+      return {to_quaternion<real_t>((*p)->getQuaternion())};
+    }
+    return {};
   }
   boost::optional<Utils::Vector3d>
   get_particle_position(std::uint64_t uid) const override {
-    return {Utils::Vector3d{0, 0, 0}};
+    auto p = get_pe_particle(uid);
+    if (p) {
+      return {to_vector3d((*p)->getPosition())};
+    }
+    return {};
   }
 
   ~LBWalberlaImpl() override = default;

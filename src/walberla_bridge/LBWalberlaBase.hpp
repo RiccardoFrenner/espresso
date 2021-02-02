@@ -28,6 +28,7 @@
  */
 
 #include <utils/Vector.hpp>
+#include <utils/quaternion.hpp>
 
 #include <boost/optional.hpp>
 
@@ -170,7 +171,7 @@ public:
   get_particle_velocity(std::uint64_t uid) const = 0;
   virtual boost::optional<Utils::Vector3d>
   get_particle_angular_velocity(std::uint64_t uid) const = 0;
-  virtual boost::optional<Utils::Vector3d>
+  virtual boost::optional<Utils::Quaternion<double>>
   get_particle_orientation(std::uint64_t uid) const = 0;
   virtual boost::optional<Utils::Vector3d>
   get_particle_position(std::uint64_t uid) const = 0;

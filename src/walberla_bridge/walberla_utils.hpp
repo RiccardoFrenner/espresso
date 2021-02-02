@@ -24,6 +24,7 @@
 
 #include <utils/Vector.hpp>
 #include <utils/interpolation/bspline_3d.hpp>
+#include <utils/quaternion.hpp>
 
 #include <boost/optional.hpp>
 
@@ -47,6 +48,16 @@ inline Utils::Vector6d to_vector6d(const Matrix3<real_t> m) {
 }
 inline Utils::Vector3i to_vector3i(const std::array<int, 3> v) {
   return Utils::Vector3i{v[0], v[1], v[2]};
+}
+
+template <typename T>
+Utils::Quaternion<T> to_quaternion(const math::Quaternion<T> quat) {
+  Utils::Quaternion<T> q;
+  q[0] = quat.data()[0];
+  q[1] = quat.data()[1];
+  q[2] = quat.data()[2];
+  q[3] = quat.data()[3];
+  return q;
 }
 
 // Helpers to retrieve blocks and cells
