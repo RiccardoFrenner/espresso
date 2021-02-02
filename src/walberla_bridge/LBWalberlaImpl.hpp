@@ -902,6 +902,22 @@ public:
     }
     return {};
   }
+  void set_particle_force(std::uint64_t uid, const Utils::Vector3d &f) {
+    auto p = get_pe_particle(uid);
+    if (p) {
+      (*p)->setForce(to_vector3(f)));
+    }
+    // If particle not on the calling rank, nothing happens.
+    // TODO: Is this the wanted behaviour?
+  }
+  void set_particle_torque(std::uint64_t uid, const Utils::Vector3d &tau) {
+    auto p = get_pe_particle(uid);
+    if (p) {
+      (*p)->setTorque(to_vector3(tau)));
+    }
+    // If particle not on the calling rank, nothing happens.
+    // TODO: Is this the wanted behaviour?
+  }
 
   ~LBWalberlaImpl() override = default;
 };

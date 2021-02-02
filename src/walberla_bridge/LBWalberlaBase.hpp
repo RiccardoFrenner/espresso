@@ -175,6 +175,10 @@ public:
   get_particle_orientation(std::uint64_t uid) const = 0;
   virtual boost::optional<Utils::Vector3d>
   get_particle_position(std::uint64_t uid) const = 0;
+  virtual void set_particle_force(std::uint64_t uid,
+                                  const Utils::Vector3d &f) = 0;
+  virtual void set_particle_torque(std::uint64_t uid,
+                                   const Utils::Vector3d &tau) = 0;
 
   virtual ~LBWalberlaBase() = default;
 };
