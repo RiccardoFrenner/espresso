@@ -19,5 +19,9 @@ include(unit_test)
 
 unit_test(NAME LBWalberla_test SRC LBWalberla_test.cpp DEPENDS WalberlaBridge
           EspressoUtils Boost::mpi ${WALBERLA_LIBS})
+unit_test(NAME LBWalberla_pe_test SRC LBWalberla_pe_coupling.cpp DEPENDS WalberlaBridge
+          EspressoUtils Boost::mpi ${WALBERLA_LIBS})
 target_include_directories(LBWalberla_test PRIVATE ${WALBERLA_INCLUDE_DIRS}
+                                                   ${walberla_BINARY_DIR}/src)
+target_include_directories(LBWalberla_pe_test PRIVATE ${WALBERLA_INCLUDE_DIRS}
                                                    ${walberla_BINARY_DIR}/src)

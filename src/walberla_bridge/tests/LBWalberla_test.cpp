@@ -108,6 +108,7 @@ LbGeneratorVector all_lbs() {
 BOOST_TEST_DONT_PRINT_LOG_VALUE(LbGeneratorVector::value_type)
 
 BOOST_DATA_TEST_CASE(basic_params, bdata::make(all_lbs()), lb_generator) {
+  BOOST_TEST(1 == 2);
   auto lb = lb_generator(mpi_shape);
   BOOST_CHECK(lb->get_grid_dimensions() == grid_dimensions);
 
