@@ -278,6 +278,7 @@ public:
 
     // Init pe time integrator
     // cr::HCSITS is for hard contacts, cr::DEM for soft contacts
+    // TODO: Access to m_cr parameters
     m_cr = std::make_shared<pe::cr::HCSITS>(m_globalBodyStorage,
                                             m_blocks->getBlockForestPointer(),
                                             m_pe_storageID, m_ccdID, m_fcdID);
@@ -822,12 +823,12 @@ public:
   }
 
   // pe utility functions
-  boost::optional<pe::BodyID> get_pe_particle(std::uint64_t uid) const {
+  pe::BodyID get_pe_particle(std::uint64_t uid) const {
     auto it = m_pe_particles.find(uid);
     if (it != m_pe_particles.end()) {
-      return {it->second};
+      return it->second;
     }
-    return {};
+    return nullptr;
   }
 
   // pe interface functions
@@ -836,6 +837,7 @@ public:
     if (m_pe_particles.find(uid) != m_pe_particles.end()) {
       return false;
     }
+    // TODO: Particle as argument
     // TODO: Pass material as argument? Is there an espresso material object? Or
     // have some predefined materials?
     pe::MaterialID material =
@@ -866,54 +868,56 @@ public:
   /** @brief Call after all pe particles have been added to sync them on all
    * blocks */
   void sync_pe_particles() override {
+    // TODO: Difference between syncShadowOwners?
     pe::syncNextNeighbors<BodyTypeTuple>(m_blocks->getBlockForest(),
                                          m_pe_storageID);
   }
 
   boost::optional<Utils::Vector3d>
   get_particle_velocity(std::uint64_t uid) const override {
-    auto p = get_pe_particle(uid);
-    if (p) {
-      return {to_vector3d((*p)->getLinearVel())};
+    pe::BodyID p = get_pe_particle(uid);
+    if (p != nullptr) {
+      return {to_vector3d(p->getLinearVel())};
     }
     return {};
   }
   boost::optional<Utils::Vector3d>
   get_particle_angular_velocity(std::uint64_t uid) const override {
-    auto p = get_pe_particle(uid);
-    if (p) {
-      return {to_vector3d((*p)->getAngularVel())};
+    pe::BodyID p = get_pe_particle(uid);
+    if (p != nullptr) {
+      return {to_vector3d(p->getAngularVel())};
     }
     return {};
   }
+  // TODO: Somehow use real_t instead of always double
   boost::optional<Utils::Quaternion<double>>
   get_particle_orientation(std::uint64_t uid) const override {
-    auto p = get_pe_particle(uid);
-    if (p) {
-      return {to_quaternion<real_t>((*p)->getQuaternion())};
+    pe::BodyID p = get_pe_particle(uid);
+    if (p != nullptr) {
+      return {to_quaternion<real_t>(p->getQuaternion())};
     }
     return {};
   }
   boost::optional<Utils::Vector3d>
   get_particle_position(std::uint64_t uid) const override {
-    auto p = get_pe_particle(uid);
-    if (p) {
-      return {to_vector3d((*p)->getPosition())};
+    pe::BodyID p = get_pe_particle(uid);
+    if (p != nullptr) {
+      return {to_vector3d(p->getPosition())};
     }
     return {};
   }
   void set_particle_force(std::uint64_t uid, const Utils::Vector3d &f) {
-    auto p = get_pe_particle(uid);
-    if (p) {
-      (*p)->setForce(to_vector3(f)));
+    pe::BodyID p = get_pe_particle(uid);
+    if (p != nullptr) {
+      p->setForce(to_vector3(f));
     }
     // If particle not on the calling rank, nothing happens.
     // TODO: Is this the wanted behaviour?
   }
   void set_particle_torque(std::uint64_t uid, const Utils::Vector3d &tau) {
-    auto p = get_pe_particle(uid);
-    if (p) {
-      (*p)->setTorque(to_vector3(tau)));
+    pe::BodyID p = get_pe_particle(uid);
+    if (p != nullptr) {
+      p->setTorque(to_vector3(tau));
     }
     // If particle not on the calling rank, nothing happens.
     // TODO: Is this the wanted behaviour?
