@@ -837,16 +837,14 @@ public:
     if (m_pe_particles.find(uid) != m_pe_particles.end()) {
       return false;
     }
-    // TODO: Particle as argument
+    // TODO: Particle as argument? -> not possible since no particle class in
+    // espresso
     // TODO: Pass material as argument? Is there an espresso material object? Or
     // have some predefined materials?
-    pe::MaterialID material =
-        pe::createMaterial("myMaterial", real_c(2.54), real_c(0.8), real_c(0.1),
-                           real_c(0.05), real_c(0.5), 1, 1, 0, 0);
-    Vector3<real_t> gpos_ = to_vector3(gpos);
+    // pe::MaterialID material;
     pe::SphereID sp =
         pe::createSphere(*m_globalBodyStorage, m_blocks->getBlockForest(),
-                         m_pe_storageID, uid, gpos_, real_c(radius));
+                         m_pe_storageID, uid, to_vector3(gpos), real_c(radius));
     if (sp != nullptr) {
       sp->setLinearVel(to_vector3(linVel));
       m_pe_particles[uid] = sp;
