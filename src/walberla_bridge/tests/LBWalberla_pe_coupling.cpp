@@ -28,6 +28,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <LBWalberlaD3Q19MRT.hpp>
+#include <core/math/all.h> // TODO: remove
 #include <lb_walberla_init.hpp>
 #include <walberla_utils.hpp>
 
@@ -36,8 +37,14 @@
 using Utils::Vector3d;
 using Utils::Vector3i;
 using walberla::LBWalberlaD3Q19MRT;
+using walberla::real_c;
+using walberla::real_t;
 using walberla::to_vector3;
 using walberla::to_vector3d;
+using walberla::uint_c;
+using walberla::Vector3;
+using uint_t = std::size_t; // TODO: replace all uints with size_t
+// TODO: replace all walberla types with espresso types
 
 constexpr double viscosity = 0.4;
 constexpr Vector3d box_dimensions = {6, 6, 9};
@@ -114,6 +121,115 @@ BOOST_AUTO_TEST_CASE(remove_particle) {
   // Check that particle doesn't exist on any rank
   BOOST_CHECK(p == nullptr);
   BOOST_CHECK(lb->get_pe_particle(uid) == nullptr);
+}
+
+// Recreation of the SettlingSphere test in Walberla
+BOOST_AUTO_TEST_CASE(integration) {
+  auto lb = std::make_shared<LBWalberlaD3Q19MRT>(viscosity, density, agrid, tau,
+                                                 box_dimensions, mpi_shape, 1);
+
+  // simulation control
+  bool shortrun = false;
+  bool funcTest = false;
+  bool fileIO = false;
+
+  // physical setup
+  uint_t fluidType = 1;
+
+  // values are mainly taken from the reference paper
+  const real_t diameter_SI = real_t(15e-3);
+  const real_t densitySphere_SI = real_t(1120);
+
+  real_t densityFluid_SI, dynamicViscosityFluid_SI;
+  real_t expectedSettlingVelocity_SI;
+  switch (fluidType) {
+  case 1:
+    // Re_p around 1.5
+    densityFluid_SI = real_t(970);
+    dynamicViscosityFluid_SI = real_t(373e-3);
+    expectedSettlingVelocity_SI = real_t(0.035986);
+    break;
+  case 2:
+    // Re_p around 4.1
+    densityFluid_SI = real_t(965);
+    dynamicViscosityFluid_SI = real_t(212e-3);
+    expectedSettlingVelocity_SI = real_t(0.05718);
+    break;
+  case 3:
+    // Re_p around 11.6
+    densityFluid_SI = real_t(962);
+    dynamicViscosityFluid_SI = real_t(113e-3);
+    expectedSettlingVelocity_SI = real_t(0.087269);
+    break;
+  case 4:
+    // Re_p around 31.9
+    densityFluid_SI = real_t(960);
+    dynamicViscosityFluid_SI = real_t(58e-3);
+    expectedSettlingVelocity_SI = real_t(0.12224);
+    break;
+  default:
+    WALBERLA_ABORT("Only four different fluids are supported! Choose type "
+                   "between 1 and 4.");
+  }
+
+  const real_t kinematicViscosityFluid_SI =
+      dynamicViscosityFluid_SI / densityFluid_SI;
+
+  const real_t gravitationalAcceleration_SI = real_t(9.81);
+  Vector3<real_t> domainSize_SI(real_t(100e-3), real_t(100e-3), real_t(160e-3));
+  // shift starting gap a bit upwards to match the reported (plotted) values
+  const real_t startingGapSize_SI = real_t(120e-3) + real_t(0.25) * diameter_SI;
+
+  //////////////////////////
+  // NUMERICAL PARAMETERS //
+  //////////////////////////
+  uint_t numberOfCellsInHorizontalDirection = uint_t(100);
+  const real_t dx_SI =
+      domainSize_SI[0] / real_c(numberOfCellsInHorizontalDirection);
+  const Vector3<uint_t> domainSize(
+      uint_c(floor(domainSize_SI[0] / dx_SI + real_t(0.5))),
+      uint_c(floor(domainSize_SI[1] / dx_SI + real_t(0.5))),
+      uint_c(floor(domainSize_SI[2] / dx_SI + real_t(0.5))));
+  const real_t diameter = diameter_SI / dx_SI;
+  const real_t sphereVolume =
+      walberla::math::pi / real_t(6) * diameter * diameter * diameter;
+
+  const real_t expectedSettlingVelocity = real_t(0.01);
+  const real_t dt_SI =
+      expectedSettlingVelocity / expectedSettlingVelocity_SI * dx_SI;
+
+  const real_t viscosity = kinematicViscosityFluid_SI * dt_SI / (dx_SI * dx_SI);
+  const real_t relaxationTime =
+      real_t(1) / walberla::lbm::collision_model::omegaFromViscosity(viscosity);
+
+  const real_t gravitationalAcceleration =
+      gravitationalAcceleration_SI * dt_SI * dt_SI / dx_SI;
+
+  const real_t densityFluid = real_t(1);
+  const real_t densitySphere =
+      densityFluid * densitySphere_SI / densityFluid_SI;
+
+  const real_t dx = real_t(1);
+
+  const uint_t timesteps =
+      funcTest ? 1 : (shortrun ? uint_t(200) : uint_t(250000));
+  const uint_t numPeSubCycles = uint_t(1);
+
+  const real_t densityFluid = real_t(1);
+  const real_t densitySphere =
+      densityFluid * densitySphere_SI / densityFluid_SI;
+  // add the sphere
+  lb->createMaterial("mySphereMat", densitySphere, real_t(0.5), real_t(0.1),
+                     real_t(0.1), real_t(0.24), real_t(200), real_t(200),
+                     real_t(0), real_t(0));
+  Vector3<real_t> initialPosition(
+      real_t(0.5) * real_c(domainSize[0]), real_t(0.5) * real_c(domainSize[1]),
+      startingGapSize_SI / dx_SI + real_t(0.5) * diameter);
+  Vector3<real_t> linearVelocity(real_t(0), real_t(0), real_t(0));
+  uint uid = 123;
+  lb->add_pe_particle(uid, to_vector3d(initialPosition), real_t(0.5) * diameter,
+                      to_vector3d(linearVelocity), "mySphereMat");
+  lb->sync_pe_particles();
 }
 
 int main(int argc, char **argv) {

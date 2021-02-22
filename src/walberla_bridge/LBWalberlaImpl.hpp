@@ -44,6 +44,11 @@
 #include "pe/statistics/BodyStatistics.h"
 #include "pe/utility/DestroyBody.h"
 
+// TODO: Remove unused headers
+#include "pe_coupling/mapping/all.h"
+#include "pe_coupling/momentum_exchange_method/all.h"
+#include "pe_coupling/utility/all.h"
+
 #include "core/mpi/Environment.h"
 #include "core/mpi/MPIManager.h"
 #include "core/mpi/MPITextFile.h"
@@ -97,6 +102,9 @@ namespace walberla {
 // Flags marking fluid and boundaries
 const FlagUID Fluid_flag("fluid");
 const FlagUID UBB_flag("velocity bounce back");
+const FlagUID
+    MO_BB_Flag("moving obstacle BB"); // TODO: Needed? Same as UBB_flag?
+const FlagUID FormerMO_Flag("former moving obstacle");
 
 /** Class that runs and controls the LB on WaLBerla
  */
@@ -106,12 +114,14 @@ protected:
   using VectorField = GhostLayerField<real_t, 3>;
   using FlagField = walberla::FlagField<walberla::uint8_t>;
   using PdfField = lbm::PdfField<LatticeModel>;
-  /** Velocity boundary condition */
+  using BodyField_T = GhostLayerField<pe::BodyID, 1>;
+  /** Velocity boundary conditions */
   using UBB = lbm::UBB<LatticeModel, uint8_t, true, true>;
+  typedef pe_coupling::SimpleBB<LatticeModel, FlagField> MO_BB_T;
 
   /** Boundary handling */
   using Boundaries =
-      BoundaryHandling<FlagField, typename LatticeModel::Stencil, UBB>;
+      BoundaryHandling<FlagField, typename LatticeModel::Stencil, UBB, MO_BB_T>;
 
   // Adaptors
   using VelocityAdaptor = typename lbm::Adaptor<LatticeModel>::VelocityVector;
@@ -140,6 +150,10 @@ protected:
 
   BlockDataID m_boundary_handling_id;
 
+  // Stores a pointer (pe::BodyID) inside each flagged moving boundary cell to
+  // the containing particle
+  BlockDataID m_body_field_id;
+
   using Communicator = blockforest::communication::UniformBufferedScheme<
       typename stencil::D3Q27>;
   std::shared_ptr<Communicator> m_communication;
@@ -163,7 +177,7 @@ protected:
   std::shared_ptr<pe::BodyStorage> m_globalBodyStorage;
 
   // Storage handle for pe particles
-  BlockDataID m_pe_storageID;
+  BlockDataID m_body_storage_id;
 
   // coarse and fine collision detection
   BlockDataID m_ccdID;
@@ -171,6 +185,10 @@ protected:
 
   // pe time integrator
   std::shared_ptr<pe::cr::HCSITS> m_cr;
+
+  // storage for force/torque to average over two timesteps
+  std::shared_ptr<pe_coupling::BodiesForceTorqueContainer> bodiesFTContainer1;
+  std::shared_ptr<pe_coupling::BodiesForceTorqueContainer> bodiesFTContainer2;
 
   // calculates particle information on call
   // std::shared_ptr<pe::BodyStatistics> m_bodyStats;
@@ -186,14 +204,19 @@ protected:
   class LBBoundaryHandling {
   public:
     LBBoundaryHandling(const BlockDataID &flag_field_id,
-                       const BlockDataID &pdf_field_id)
-        : m_flag_field_id(flag_field_id), m_pdf_field_id(pdf_field_id) {}
+                       const BlockDataID &pdf_field_id,
+                       const BlockDataID &body_field_id)
+        : m_flag_field_id(flag_field_id), m_pdf_field_id(pdf_field_id),
+          m_body_field_id(body_field_id) {}
 
-    Boundaries *operator()(IBlock *const block) {
+    Boundaries *operator()(IBlock *const block,
+                           const StructuredBlockStorage *const storage) {
 
       FlagField *flag_field =
           block->template getData<FlagField>(m_flag_field_id);
       PdfField *pdf_field = block->template getData<PdfField>(m_pdf_field_id);
+      BodyField_T *body_field =
+          block->template getData<BodyField_T>(m_body_field_id);
 
       const auto fluid = flag_field->flagExists(Fluid_flag)
                              ? flag_field->getFlag(Fluid_flag)
@@ -201,12 +224,18 @@ protected:
 
       return new Boundaries(
           "boundary handling", flag_field, fluid,
-          UBB("velocity bounce back", UBB_flag, pdf_field, nullptr));
+          UBB("velocity bounce back", UBB_flag, pdf_field, nullptr),
+          MO_BB_T("MO_BB", MO_BB_Flag, pdf_field, flag_field, body_field, fluid,
+                  *storage, *block));
+
+      // TODO: needed?
+      // handling->fillWithDomain( FieldGhostLayers );
     }
 
   private:
     const BlockDataID m_flag_field_id;
     const BlockDataID m_pdf_field_id;
+    const BlockDataID m_body_field_id;
   };
 
 public:
@@ -261,16 +290,21 @@ public:
         m_blocks, "flag field", m_n_ghost_layers);
 
     // Init pe
+    // Add body field
+    m_body_field_id = field::addToStorage<BodyField_T>(
+        m_blocks, "body field", nullptr, field::zyxf, m_n_ghost_layers);
+
     m_globalBodyStorage = std::make_shared<pe::BodyStorage>();
 
     // Storage for pe particles
-    m_pe_storageID = m_blocks->addBlockData(
-        pe::createStorageDataHandling<BodyTypeTuple>(), "PE Storage");
+    m_body_storage_id = m_blocks->addBlockData(
+        pe::createStorageDataHandling<BodyTypeTuple>(), "PE Body Storage");
 
     // coarse and fine collision detection
-    m_ccdID = m_blocks->addBlockData(pe::ccd::createHashGridsDataHandling(
-                                         m_globalBodyStorage, m_pe_storageID),
-                                     "CCD");
+    m_ccdID =
+        m_blocks->addBlockData(pe::ccd::createHashGridsDataHandling(
+                                   m_globalBodyStorage, m_body_storage_id),
+                               "CCD");
     m_fcdID = m_blocks->addBlockData(
         pe::fcd::createGenericFCDDataHandling<
             BodyTypeTuple, pe::fcd::AnalyticCollideFunctor>(),
@@ -279,9 +313,9 @@ public:
     // Init pe time integrator
     // cr::HCSITS is for hard contacts, cr::DEM for soft contacts
     // TODO: Access to m_cr parameters
-    m_cr = std::make_shared<pe::cr::HCSITS>(m_globalBodyStorage,
-                                            m_blocks->getBlockForestPointer(),
-                                            m_pe_storageID, m_ccdID, m_fcdID);
+    m_cr = std::make_shared<pe::cr::HCSITS>(
+        m_globalBodyStorage, m_blocks->getBlockStoragePointer(),
+        m_body_storage_id, m_ccdID, m_fcdID, nullptr);
     m_cr->setMaxIterations(10);
     m_cr->setRelaxationModel(
         pe::cr::HardContactSemiImplicitTimesteppingSolvers::
@@ -294,8 +328,16 @@ public:
 
     // Init body statistics
     // m_bodyStats =
-    //     std::make_shared<pe::BodyStatistics>(m_blocks, m_pe_storageID);
+    //     std::make_shared<pe::BodyStatistics>(m_blocks, m_body_storage_id);
     // (*m_bodyStats)();
+
+    // Init body force/torque storage
+    bodiesFTContainer1 =
+        std::make_shared<pe_coupling::BodiesForceTorqueContainer>(
+            m_blocks, m_body_storage_id);
+    bodiesFTContainer2 =
+        std::make_shared<pe_coupling::BodiesForceTorqueContainer>(
+            m_blocks, m_body_storage_id);
   };
 
   void setup_with_valid_lattice_model(double density) {
@@ -305,12 +347,23 @@ public:
         to_vector3(Utils::Vector3d{}), real_t(density), m_n_ghost_layers);
 
     // Register boundary handling
-    m_boundary_handling_id = m_blocks->addBlockData<Boundaries>(
-        LBBoundaryHandling(m_flag_field_id, m_pdf_field_id),
+    m_boundary_handling_id = m_blocks->addStructuredBlockData<Boundaries>(
+        LBBoundaryHandling(m_flag_field_id, m_pdf_field_id, m_body_field_id),
         "boundary handling");
     clear_boundaries();
 
+    // map pe bodies into the LBM simulation
+    // uses standard bounce back boundary conditions
+    pe_coupling::mapMovingBodies<
+        Boundaries>(/* TODO: Das sollte erst nach dem Hinzufügen von Partikeln
+                       gecallt werden! Allgemein sollte mein ganzes pe Zeug
+                       nicht unbedingt in dieser Funktion stehen */
+                    *m_blocks, m_boundary_handling_id, m_body_storage_id,
+                    *m_globalBodyStorage, m_body_field_id, MO_BB_Flag,
+                    pe_coupling::selectRegularBodies);
+
     // sets up the communication and registers pdf field and force field to it
+    // TODO: m_communication = scheme in SegreSilberbergMem.cpp
     m_communication = std::make_shared<Communicator>(m_blocks);
     m_communication->addPackInfo(
         std::make_shared<field::communication::PackInfo<PdfField>>(
@@ -329,6 +382,34 @@ public:
     m_time_loop = std::make_shared<timeloop::SweepTimeloop>(
         m_blocks->getBlockStorage(), 1);
 
+    // sweep for updating the pe body mapping into the LBM simulation
+    m_time_loop->add() << timeloop::Sweep(
+        pe_coupling::BodyMapping<LatticeModel, Boundaries>(
+            m_blocks, m_pdf_field_id, m_boundary_handling_id, m_body_storage_id,
+            m_globalBodyStorage, m_body_field_id, MO_BB_Flag, FormerMO_Flag,
+            pe_coupling::selectRegularBodies),
+        "Body Mapping");
+
+    // sweep for restoring PDFs in cells previously occupied by pe bodies
+    // this uses the ´EquilibriumReconstructor´ alternatives are
+    // ´EquilibriumAndNonEquilibriumReconstructor´ and
+    // ´ExtrapolationReconstructor´
+    typedef pe_coupling::EquilibriumReconstructor<LatticeModel, Boundaries>
+        Reconstructor_T;
+    Reconstructor_T reconstructor(m_blocks, m_boundary_handling_id,
+                                  m_body_field_id);
+    m_time_loop->add() << timeloop::Sweep(
+        pe_coupling::PDFReconstruction<LatticeModel, Boundaries,
+                                       Reconstructor_T>(
+            m_blocks, m_pdf_field_id, m_boundary_handling_id, m_body_storage_id,
+            m_globalBodyStorage, m_body_field_id, reconstructor, FormerMO_Flag,
+            Fluid_flag),
+        "PDF Restore");
+
+    bodiesFTContainer2->store();
+
+    // TODO: In SegreSilberbergMem.cpp the communication function is added as an
+    // BeforeFunction, does that matter?
     m_time_loop->add() << timeloop::Sweep(
         Boundaries::getBlockSweep(m_boundary_handling_id), "boundary handling");
     m_time_loop->add() << timeloop::Sweep(makeSharedSweep(m_reset_force),
@@ -345,6 +426,45 @@ public:
 
     // Synchronize ghost layers
     (*m_communication)();
+
+    // Averaging of force/torque over two time steps to damp oscillations of the
+    // interaction force/torque
+    std::function<void(void)> storeForceTorqueInCont1 = std::bind(
+        &pe_coupling::BodiesForceTorqueContainer::store, bodiesFTContainer1);
+    std::function<void(void)> setForceTorqueOnBodiesFromCont2 =
+        std::bind(&pe_coupling::BodiesForceTorqueContainer::setOnBodies,
+                  bodiesFTContainer2);
+
+    // store force/torque from hydrodynamic interactions in container1
+    m_time_loop->addFuncAfterTimeStep(storeForceTorqueInCont1, "Force Storing");
+
+    // set force/torque from previous time step (in container2)
+    m_time_loop->addFuncAfterTimeStep(setForceTorqueOnBodiesFromCont2,
+                                      "Force setting");
+
+    // average the force/torque by scaling it with factor 1/2
+    m_time_loop->addFuncAfterTimeStep(
+        pe_coupling::ForceTorqueOnBodiesScaler(m_blocks, m_body_storage_id,
+                                               real_t(0.5)),
+        "Force averaging");
+
+    // swap containers
+    m_time_loop->addFuncAfterTimeStep(
+        pe_coupling::BodyContainerSwapper(bodiesFTContainer1,
+                                          bodiesFTContainer2),
+        "Swap FT container");
+
+    // add pe timesteps
+    const uint_t numPeSubcycles = uint_c(1); // TODO: member? getter, setter?
+    std::function<void(void)> syncCall =
+        std::bind(pe::syncNextNeighbors<BodyTypeTuple>,
+                  std::ref(m_blocks->getBlockForest()), m_body_storage_id,
+                  static_cast<WcTimingTree *>(nullptr), real_t(1.5),
+                  false); // TODO: replace
+    m_time_loop->addFuncAfterTimeStep(
+        pe_coupling::TimeStep(m_blocks, m_body_storage_id, *m_cr, syncCall,
+                              real_t(1), numPeSubcycles),
+        "pe Time Step");
   };
 
   std::shared_ptr<LatticeModel> get_lattice_model() { return m_lattice_model; };
@@ -833,18 +953,19 @@ public:
 
   // pe interface functions
   bool add_pe_particle(std::uint64_t uid, const Utils::Vector3d &gpos,
-                       double radius, const Utils::Vector3d &linVel) override {
+                       double radius, const Utils::Vector3d &linVel,
+                       const std::string &material_name = "iron") override {
     if (m_pe_particles.find(uid) != m_pe_particles.end()) {
       return false;
     }
     // TODO: Particle as argument? -> not possible since no particle class in
     // espresso
-    // TODO: Pass material as argument? Is there an espresso material object? Or
-    // have some predefined materials?
-    // pe::MaterialID material;
-    pe::SphereID sp =
-        pe::createSphere(*m_globalBodyStorage, m_blocks->getBlockForest(),
-                         m_pe_storageID, uid, to_vector3(gpos), real_c(radius));
+    auto material = pe::Material::find(material_name);
+    if (material == pe::invalid_material)
+      material = pe::Material::find("iron");
+    pe::SphereID sp = pe::createSphere(
+        *m_globalBodyStorage, m_blocks->getBlockStorage(), m_body_storage_id,
+        uid, to_vector3(gpos), real_c(radius), material);
     if (sp != nullptr) {
       sp->setLinearVel(to_vector3(linVel));
       m_pe_particles[uid] = sp;
@@ -858,17 +979,24 @@ public:
     auto it = m_pe_particles.find(uid);
     if (it != m_pe_particles.end()) {
       m_pe_particles.erase(it);
-      pe::destroyBodyByUID(*m_globalBodyStorage, m_blocks->getBlockForest(),
-                           m_pe_storageID, uid);
+      pe::destroyBodyByUID(*m_globalBodyStorage, m_blocks->getBlockStorage(),
+                           m_body_storage_id, uid);
     }
   }
 
   /** @brief Call after all pe particles have been added to sync them on all
    * blocks */
   void sync_pe_particles() override {
+    // overlap of 1.5 * lattice grid spacing is needed for correct mapping
+    // see
+    // https://www.walberla.net/doxygen/group__pe__coupling.html#reconstruction
+    // for more information
+    real_t dx = real_t(1); // hardcoded in createUniformBlockGrid above
+    real_t overlap = real_t(1.5) * dx;
     // TODO: Difference between syncShadowOwners?
-    pe::syncNextNeighbors<BodyTypeTuple>(m_blocks->getBlockForest(),
-                                         m_pe_storageID);
+    pe::syncNextNeighbors<BodyTypeTuple>(
+        m_blocks->getBlockForest(), m_body_storage_id,
+        static_cast<WcTimingTree *>(nullptr), overlap, false);
   }
 
   boost::optional<Utils::Vector3d>
@@ -921,8 +1049,19 @@ public:
     // TODO: Is this the wanted behaviour?
   }
 
+  void createMaterial(const std::string &name, double density, double cor,
+                      double csf, double cdf, double poisson, double young,
+                      double stiffness, double dampingN, double dampingT) {
+
+    pe::createMaterial(name, real_c(density), real_c(cor), real_c(csf),
+                       real_c(cdf), real_c(poisson), real_c(young),
+                       real_c(stiffness), real_c(dampingN), real_c(dampingT));
+  }
+
   ~LBWalberlaImpl() override = default;
 };
 } // namespace walberla
 
 #endif // LB_WALBERLA_H
+
+// TODO: I have added everything in SegreSilberbergMEM.cpp up to line 737

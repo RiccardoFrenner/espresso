@@ -163,8 +163,8 @@ public:
 
   // PE
   virtual bool add_pe_particle(std::uint64_t uid, const Utils::Vector3d &gpos,
-                               double radius,
-                               const Utils::Vector3d &linVel) = 0;
+                               double radius, const Utils::Vector3d &linVel,
+                               const std::string &material_name = "iron") = 0;
   virtual void remove_pe_particle(std::uint64_t uid) = 0;
   virtual void sync_pe_particles() = 0;
   virtual boost::optional<Utils::Vector3d>
@@ -179,6 +179,12 @@ public:
                                   const Utils::Vector3d &f) = 0;
   virtual void set_particle_torque(std::uint64_t uid,
                                    const Utils::Vector3d &tau) = 0;
+
+  // TODO: Again, walberla uses real_t ... what should I use?
+  virtual void createMaterial(const std::string &name, double density,
+                              double cor, double csf, double cdf,
+                              double poisson, double young, double stiffness,
+                              double dampingN, double dampingT) = 0;
 
   virtual ~LBWalberlaBase() = default;
 };
