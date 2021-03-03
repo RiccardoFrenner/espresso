@@ -128,6 +128,8 @@ protected:
 
   /** Boundary handling */
   using Boundaries =
+      BoundaryHandling<FlagField, typename LatticeModel::Stencil, UBB>;
+  using MOBoundaries =
       BoundaryHandling<FlagField, typename LatticeModel::Stencil, UBB, MO_BB_T>;
 
   // Adaptors
@@ -211,14 +213,43 @@ protected:
   class LBBoundaryHandling {
   public:
     LBBoundaryHandling(const BlockDataID &flag_field_id,
+                       const BlockDataID &pdf_field_id)
+        : m_flag_field_id(flag_field_id), m_pdf_field_id(pdf_field_id) {}
+
+    Boundaries *operator()(IBlock *const block) {
+
+      FlagField *flag_field =
+          block->template getData<FlagField>(m_flag_field_id);
+      PdfField *pdf_field = block->template getData<PdfField>(m_pdf_field_id);
+
+      const auto fluid = flag_field->flagExists(Fluid_flag)
+                             ? flag_field->getFlag(Fluid_flag)
+                             : flag_field->registerFlag(Fluid_flag);
+
+      return new Boundaries(
+          "boundary handling", flag_field, fluid,
+          UBB("velocity bounce back", UBB_flag, pdf_field, nullptr));
+    }
+
+  private:
+    const BlockDataID m_flag_field_id;
+    const BlockDataID m_pdf_field_id;
+  };
+
+  // Boundary handling
+  class MOBoundaryHandling {
+  public:
+    MOBoundaryHandling(const BlockDataID &flag_field_id,
                        const BlockDataID &pdf_field_id,
                        const BlockDataID &body_field_id)
         : m_flag_field_id(flag_field_id), m_pdf_field_id(pdf_field_id),
           m_body_field_id(body_field_id) {}
 
     Boundaries *operator()(IBlock *const block,
-                           const StructuredBlockStorage *const storage) {
+                           const StructuredBlockStorage *const storage) const {
 
+      WALBERLA_ASSERT_NOT_NULLPTR(block);
+      WALBERLA_ASSERT_NOT_NULLPTR(storage);
       FlagField *flag_field =
           block->template getData<FlagField>(m_flag_field_id);
       PdfField *pdf_field = block->template getData<PdfField>(m_pdf_field_id);
@@ -229,14 +260,16 @@ protected:
                              ? flag_field->getFlag(Fluid_flag)
                              : flag_field->registerFlag(Fluid_flag);
 
-      return new Boundaries(
-          "boundary handling", flag_field, fluid,
+      Boundaries *handling = new Boundaries(
+          "moving obstacle boundary handling", flag_field, fluid,
           UBB("velocity bounce back", UBB_flag, pdf_field, nullptr),
           MO_BB_T("MO_BB", MO_BB_Flag, pdf_field, flag_field, body_field, fluid,
                   *storage, *block));
 
+      // boundary conditions are set by mapping the planes into the domain
       // TODO: needed?
-      // handling->fillWithDomain( FieldGhostLayers );
+      // handling->fillWithDomain(FieldGhostLayers);
+      return handling;
     }
 
   private:
