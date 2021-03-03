@@ -28,7 +28,11 @@
 #include <boost/test/unit_test.hpp>
 
 #include <LBWalberlaD3Q19MRT.hpp>
-#include <core/math/all.h> // TODO: remove
+
+// TODO: remove
+#include <core/logging/Logging.h>
+#include <core/math/all.h>
+
 #include <lb_walberla_init.hpp>
 #include <walberla_utils.hpp>
 
@@ -43,6 +47,7 @@ using walberla::to_vector3;
 using walberla::to_vector3d;
 using walberla::uint_c;
 using walberla::Vector3;
+using walberla::pe_coupling::ForceOnBodiesAdder;
 using uint_t = std::size_t; // TODO: replace all uints with size_t
 // TODO: replace all walberla types with espresso types
 
@@ -58,14 +63,14 @@ Vector3i mpi_shape;
 constexpr unsigned int seed = 3;
 constexpr double kT = 0.0014;
 
-BOOST_AUTO_TEST_CASE(add_particle) {
+BOOST_AUTO_TEST_CASE(add_particle_inside_domain) {
   auto lb = std::make_shared<LBWalberlaD3Q19MRT>(viscosity, density, agrid, tau,
                                                  box_dimensions, mpi_shape, 1);
 
   // Create particle
   std::uint64_t uid = 12;
   double radius = 0.1;
-  Vector3d gpos{123, 456, 789};
+  Vector3d gpos{0, 0, 0};
   Vector3d linVel{1.0, 0.2, 0.1};
   lb->add_pe_particle(uid, gpos, radius, linVel);
 
@@ -76,6 +81,11 @@ BOOST_AUTO_TEST_CASE(add_particle) {
   lb->set_particle_torque(uid, torque);
 
   auto p = lb->get_pe_particle(uid);
+
+  // Check that particle exists exactly on one rank
+  int exists = p == nullptr ? 0 : 1;
+  MPI_Allreduce(MPI_IN_PLACE, &exists, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+  BOOST_CHECK(exists == 1);
 
   // Check if p is on this rank
   if (p != nullptr) {
@@ -91,10 +101,6 @@ BOOST_AUTO_TEST_CASE(add_particle) {
     BOOST_CHECK(!lb->get_particle_position(uid));
     BOOST_CHECK(!lb->get_particle_velocity(uid));
   }
-
-  // Check wrong uid does not exist
-  uint64_t wrong_uid = 99;
-  BOOST_CHECK(!lb->get_pe_particle(wrong_uid));
 }
 
 BOOST_AUTO_TEST_CASE(remove_particle) {
@@ -104,7 +110,7 @@ BOOST_AUTO_TEST_CASE(remove_particle) {
   // Create particle
   std::uint64_t uid = 12;
   double radius = 0.1;
-  Vector3d gpos{123, 456, 789};
+  Vector3d gpos{0, 0, 0};
   Vector3d linVel{1.0, 0.2, 0.1};
   lb->add_pe_particle(uid, gpos, radius, linVel);
 
@@ -119,19 +125,22 @@ BOOST_AUTO_TEST_CASE(remove_particle) {
   lb->remove_pe_particle(uid);
 
   // Check that particle doesn't exist on any rank
-  BOOST_CHECK(p == nullptr);
   BOOST_CHECK(lb->get_pe_particle(uid) == nullptr);
 }
 
 // Recreation of the SettlingSphere test in Walberla
-BOOST_AUTO_TEST_CASE(integration) {
-  auto lb = std::make_shared<LBWalberlaD3Q19MRT>(viscosity, density, agrid, tau,
-                                                 box_dimensions, mpi_shape, 1);
+BOOST_AUTO_TEST_CASE(settling_sphere) {
+  walberla::logging::Logging::instance()->setStreamLogLevel(
+      walberla::logging::Logging::DETAIL);
+  walberla::logging::Logging::instance()->setFileLogLevel(
+      walberla::logging::Logging::DETAIL);
 
   // simulation control
   bool shortrun = false;
-  bool funcTest = false;
+  bool funcTest = true; // TODO: set to false when testing convergence
   bool fileIO = false;
+  uint_t vtkIOFreq = 0;
+  std::string baseFolder = "vtk_out_SettlingSphere";
 
   // physical setup
   uint_t fluidType = 1;
@@ -180,6 +189,20 @@ BOOST_AUTO_TEST_CASE(integration) {
   // shift starting gap a bit upwards to match the reported (plotted) values
   const real_t startingGapSize_SI = real_t(120e-3) + real_t(0.25) * diameter_SI;
 
+  WALBERLA_LOG_INFO_ON_ROOT("Setup (in SI units):");
+  WALBERLA_LOG_INFO_ON_ROOT(" - domain size = " << domainSize_SI);
+  WALBERLA_LOG_INFO_ON_ROOT(" - sphere: diameter = "
+                            << diameter_SI << ", density = " << densitySphere_SI
+                            << ", starting gap size = " << startingGapSize_SI);
+  WALBERLA_LOG_INFO_ON_ROOT(" - fluid: density = "
+                            << densityFluid_SI
+                            << ", dyn. visc = " << dynamicViscosityFluid_SI
+                            << ", kin. visc = " << kinematicViscosityFluid_SI);
+  WALBERLA_LOG_INFO_ON_ROOT(" - expected settling velocity = "
+                            << expectedSettlingVelocity_SI << " --> Re_p = "
+                            << expectedSettlingVelocity_SI * diameter_SI /
+                                   kinematicViscosityFluid_SI);
+
   //////////////////////////
   // NUMERICAL PARAMETERS //
   //////////////////////////
@@ -215,9 +238,27 @@ BOOST_AUTO_TEST_CASE(integration) {
       funcTest ? 1 : (shortrun ? uint_t(200) : uint_t(250000));
   const uint_t numPeSubCycles = uint_t(1);
 
-  const real_t densityFluid = real_t(1);
-  const real_t densitySphere =
-      densityFluid * densitySphere_SI / densityFluid_SI;
+  if (vtkIOFreq > 0) {
+    WALBERLA_LOG_INFO_ON_ROOT(" - writing vtk files to folder \""
+                              << baseFolder << "\" with frequency "
+                              << vtkIOFreq);
+  }
+
+  ///////////////////////////
+  // BLOCK STRUCTURE SETUP //
+  ///////////////////////////
+
+  // Vector3i numberOfBlocksPerDirection{1, 1, 1};
+  Vector3d box_dimensions{(double)domainSize[0], (double)domainSize[1],
+                          (double)domainSize[2]};
+
+  double agrid = 1.0;
+  WALBERLA_LOG_INFO_ON_ROOT("AAAAAAAAAAAAAAAAAAAAA 0") // TODO: remove
+  // TODO: Hier kommt der Fehler: "The number of requested processes (200)
+  // doesn't match the number of active MPI processes (1)!"
+  auto lb = std::make_shared<LBWalberlaD3Q19MRT>(
+      viscosity, densityFluid, agrid, tau, box_dimensions, mpi_shape, 1);
+  WALBERLA_LOG_INFO_ON_ROOT("AAAAAAAAAAAAAAAAAAAAA 1") // TODO: remove
   // add the sphere
   lb->createMaterial("mySphereMat", densitySphere, real_t(0.5), real_t(0.1),
                      real_t(0.1), real_t(0.24), real_t(200), real_t(200),
@@ -226,10 +267,90 @@ BOOST_AUTO_TEST_CASE(integration) {
       real_t(0.5) * real_c(domainSize[0]), real_t(0.5) * real_c(domainSize[1]),
       startingGapSize_SI / dx_SI + real_t(0.5) * diameter);
   Vector3<real_t> linearVelocity(real_t(0), real_t(0), real_t(0));
-  uint uid = 123;
-  lb->add_pe_particle(uid, to_vector3d(initialPosition), real_t(0.5) * diameter,
-                      to_vector3d(linearVelocity), "mySphereMat");
+  uint sphere_uid = 123;
+  lb->add_pe_particle(sphere_uid, to_vector3d(initialPosition),
+                      real_t(0.5) * diameter, to_vector3d(linearVelocity),
+                      "mySphereMat");
+  // // TODO: 2. Partikel aus (self-)Kollisions Testzwecken
+  // lb->add_pe_particle(
+  //     sphere_uid + 1,
+  //     to_vector3d(initialPosition) + Vector3d{2.5 * diameter, 0, 0},
+  //     real_t(0.5) * diameter, to_vector3d(linearVelocity), "mySphereMat");
   lb->sync_pe_particles();
+  lb->map_moving_bodies();
+  WALBERLA_LOG_INFO_ON_ROOT("AAAAAAAAAAAAAAAAAAAAA 2") // TODO: remove
+
+  // check for convergence of the particle position
+  std::string loggingFileName(baseFolder + "/LoggingSettlingSphere_");
+  loggingFileName += std::to_string(fluidType);
+  loggingFileName += ".txt";
+  if (fileIO) {
+    WALBERLA_LOG_INFO_ON_ROOT(" - writing logging output to file \""
+                              << loggingFileName << "\"");
+  }
+  // std::shared_ptr<std::function<void()>> SpherePropertyLogger;
+  //
+  //
+  // timeloop.addFuncAfterTimeStep(walberla::SharedFunctor<SpherePropertyLogger>(logger),
+  //                               "Sphere property logger");
+
+  Vector3<real_t> gravitationalForce(real_t(0), real_t(0),
+                                     -(densitySphere - densityFluid) *
+                                         gravitationalAcceleration *
+                                         sphereVolume);
+  lb->set_particle_force(sphere_uid, to_vector3d(gravitationalForce));
+  WALBERLA_LOG_INFO_ON_ROOT("AAAAAAAAAAAAAAAAAAAAA 3") // TODO: remove
+
+  // TODO: Wozu ist das notwendig?
+  // timeloop.addFuncAfterTimeStep(pe_coupling::ForceOnBodiesAdder(
+  //                                   blocks, bodyStorageID,
+  //                                   gravitationalForce),
+  //                               "Gravitational force");
+
+  ////////////////////////
+  // EXECUTE SIMULATION //
+  ////////////////////////
+
+  real_t terminationPosition =
+      diameter; // right before sphere touches the bottom wall
+
+  // time loop
+  Vector3d trans_vel{0.0, 0.0, 0.0};
+  double max_velocity = 0.0;
+  WALBERLA_LOG_INFO_ON_ROOT(
+      "AAAAAAAAAAAAAAAAAAAAA 4 (Bis hier tut es noch)") // TODO: remove
+  for (uint_t i = 0; i < timesteps; ++i) {
+    // perform a single simulation step
+    lb->integrate();
+
+    // auto vel = lb->get_particle_velocity(sphere_uid);
+    // if (vel)
+    //   trans_vel = *vel;
+    // auto pos = lb->get_particle_position(sphere_uid);
+    // max_velocity = std::max(max_velocity, -trans_vel[2]);
+    // if (pos && (*pos)[2] < terminationPosition) {
+    //   WALBERLA_LOG_INFO_ON_ROOT("Sphere reached terminal position "
+    //                             << (*pos)[2] << " after " << i
+    //                             << " timesteps!");
+    //   break;
+    // }
+  }
+  WALBERLA_LOG_INFO_ON_ROOT("AAAAAAAAAAAAAAAAAAAAA 5") // TODO: remove
+
+  // check the result
+  if (!funcTest && !shortrun) {
+    double relErr = std::fabs(expectedSettlingVelocity - max_velocity) /
+                    expectedSettlingVelocity;
+    WALBERLA_LOG_INFO_ON_ROOT(
+        "Expected maximum settling velocity: " << expectedSettlingVelocity);
+    WALBERLA_LOG_INFO_ON_ROOT(
+        "Simulated maximum settling velocity: " << max_velocity);
+    WALBERLA_LOG_INFO_ON_ROOT("Relative error: " << relErr);
+
+    // the relative error has to be below 10%
+    BOOST_CHECK(relErr < 0.1);
+  }
+  WALBERLA_LOG_INFO_ON_ROOT("AAAAAAAAAAAAAAAAAAAAA ENDE") // TODO: remove
 }
 
 int main(int argc, char **argv) {

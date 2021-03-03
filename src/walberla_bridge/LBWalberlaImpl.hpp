@@ -109,6 +109,13 @@ const FlagUID FormerMO_Flag("former moving obstacle");
 /** Class that runs and controls the LB on WaLBerla
  */
 template <typename LatticeModel> class LBWalberlaImpl : public LBWalberlaBase {
+  // TODO: Gibt es einen Grund dass die eigentlich protected sind?
+  // public:
+  //   using PdfField = lbm::PdfField<LatticeModel>;
+  //   using Boundaries =
+  //       BoundaryHandling<FlagField, typename LatticeModel::Stencil, UBB,
+  //       MO_BB_T>;
+
 protected:
   // Type definitions
   using VectorField = GhostLayerField<real_t, 3>;
@@ -473,10 +480,11 @@ public:
     m_time_loop->singleStep();
 
     // Handle VTK writers
-    for (auto it = m_vtk_auto.begin(); it != m_vtk_auto.end(); ++it) {
-      if (it->second.second)
-        vtk::writeFiles(it->second.first)();
-    }
+    // TODO: Wieder einkommentieren
+    // for (auto it = m_vtk_auto.begin(); it != m_vtk_auto.end(); ++it) {
+    //   if (it->second.second)
+    //     vtk::writeFiles(it->second.first)();
+    // }
   };
 
   void ghost_communication() override { (*m_communication)(); }
@@ -942,6 +950,12 @@ public:
     }
   }
 
+  // TODO: Do I really need this to track settling sphere pos/vel?
+  void add_func_after_time_step(const std::function<void()> &f,
+                                const std::string &id) {
+    m_time_loop->addFuncAfterTimeStep(f, id);
+  }
+
   // pe utility functions
   pe::BodyID get_pe_particle(std::uint64_t uid) const {
     auto it = m_pe_particles.find(uid);
@@ -979,9 +993,11 @@ public:
     auto it = m_pe_particles.find(uid);
     if (it != m_pe_particles.end()) {
       m_pe_particles.erase(it);
-      pe::destroyBodyByUID(*m_globalBodyStorage, m_blocks->getBlockStorage(),
-                           m_body_storage_id, uid);
     }
+    // Has to be called the same way on all processes to work correctly!
+    // That's why it is not inside the if statement above.
+    pe::destroyBodyByUID(*m_globalBodyStorage, m_blocks->getBlockStorage(),
+                         m_body_storage_id, uid);
   }
 
   /** @brief Call after all pe particles have been added to sync them on all
@@ -1056,6 +1072,14 @@ public:
     pe::createMaterial(name, real_c(density), real_c(cor), real_c(csf),
                        real_c(cdf), real_c(poisson), real_c(young),
                        real_c(stiffness), real_c(dampingN), real_c(dampingT));
+  }
+
+  // pe coupling interface functions
+  void map_moving_bodies() {
+    pe_coupling::mapMovingBodies<Boundaries>(
+        *m_blocks, m_boundary_handling_id, m_body_storage_id,
+        *m_globalBodyStorage, m_body_field_id, MO_BB_Flag,
+        pe_coupling::selectRegularBodies);
   }
 
   ~LBWalberlaImpl() override = default;

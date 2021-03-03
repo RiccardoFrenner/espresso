@@ -186,6 +186,10 @@ public:
                               double poisson, double young, double stiffness,
                               double dampingN, double dampingT) = 0;
 
+  virtual void map_moving_bodies() = 0;
+  virtual void add_func_after_time_step(const std::function<void()> &f,
+                                        const std::string &id) = 0;
+
   virtual ~LBWalberlaBase() = default;
 };
 
