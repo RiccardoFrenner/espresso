@@ -131,14 +131,19 @@ BOOST_AUTO_TEST_CASE(remove_particle) {
 // Recreation of the SettlingSphere test in Walberla
 BOOST_AUTO_TEST_CASE(settling_sphere) {
   walberla::logging::Logging::instance()->setStreamLogLevel(
-      walberla::logging::Logging::DETAIL);
+      walberla::logging::Logging::INFO);
   walberla::logging::Logging::instance()->setFileLogLevel(
-      walberla::logging::Logging::DETAIL);
+      walberla::logging::Logging::TRACING);
+  walberla::logging::Logging::instance()->includeLoggingToFile(
+      "MEINE_LOGS_1.txt");
+  WALBERLA_LOG_INFO_ON_ROOT(
+      "Is logging to file enabled? -> "
+      << walberla::logging::Logging::instance()->loggingToFile());
 
   // simulation control
   bool shortrun = false;
-  bool funcTest = true; // TODO: set to false when testing convergence
-  bool fileIO = false;
+  bool funcTest = false; // TODO: set to false when testing convergence
+  bool fileIO = true;
   uint_t vtkIOFreq = 0;
   std::string baseFolder = "vtk_out_SettlingSphere";
 
@@ -238,6 +243,20 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
       funcTest ? 1 : (shortrun ? uint_t(200) : uint_t(250000));
   const uint_t numPeSubCycles = uint_t(1);
 
+  WALBERLA_LOG_INFO_ON_ROOT(" - dx_SI = " << dx_SI << ", dt_SI = " << dt_SI);
+  WALBERLA_LOG_INFO_ON_ROOT("Setup (in simulation, i.e. lattice, units):");
+  WALBERLA_LOG_INFO_ON_ROOT(" - domain size = " << domainSize);
+  WALBERLA_LOG_INFO_ON_ROOT(
+      " - sphere: diameter = " << diameter << ", density = " << densitySphere);
+  WALBERLA_LOG_INFO_ON_ROOT(" - fluid: density = "
+                            << densityFluid << ", relaxation time (tau) = "
+                            << relaxationTime << ", kin. visc = " << viscosity);
+  WALBERLA_LOG_INFO_ON_ROOT(
+      " - gravitational acceleration = " << gravitationalAcceleration);
+  WALBERLA_LOG_INFO_ON_ROOT(" - expected settling velocity = "
+                            << expectedSettlingVelocity << " --> Re_p = "
+                            << expectedSettlingVelocity * diameter / viscosity);
+
   if (vtkIOFreq > 0) {
     WALBERLA_LOG_INFO_ON_ROOT(" - writing vtk files to folder \""
                               << baseFolder << "\" with frequency "
@@ -253,12 +272,8 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
                           (double)domainSize[2]};
 
   double agrid = 1.0;
-  WALBERLA_LOG_INFO_ON_ROOT("AAAAAAAAAAAAAAAAAAAAA 0") // TODO: remove
-  // TODO: Hier kommt der Fehler: "The number of requested processes (200)
-  // doesn't match the number of active MPI processes (1)!"
   auto lb = std::make_shared<LBWalberlaD3Q19MRT>(
       viscosity, densityFluid, agrid, tau, box_dimensions, mpi_shape, 1);
-  WALBERLA_LOG_INFO_ON_ROOT("AAAAAAAAAAAAAAAAAAAAA 1") // TODO: remove
   // add the sphere
   lb->createMaterial("mySphereMat", densitySphere, real_t(0.5), real_t(0.1),
                      real_t(0.1), real_t(0.24), real_t(200), real_t(200),
@@ -271,41 +286,41 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
   lb->add_pe_particle(sphere_uid, to_vector3d(initialPosition),
                       real_t(0.5) * diameter, to_vector3d(linearVelocity),
                       "mySphereMat");
-  // // TODO: 2. Partikel aus (self-)Kollisions Testzwecken
-  // lb->add_pe_particle(
-  //     sphere_uid + 1,
-  //     to_vector3d(initialPosition) + Vector3d{2.5 * diameter, 0, 0},
-  //     real_t(0.5) * diameter, to_vector3d(linearVelocity), "mySphereMat");
   lb->sync_pe_particles();
   lb->map_moving_bodies();
-  WALBERLA_LOG_INFO_ON_ROOT("AAAAAAAAAAAAAAAAAAAAA 2") // TODO: remove
 
   // check for convergence of the particle position
-  std::string loggingFileName(baseFolder + "/LoggingSettlingSphere_");
+  std::string loggingFileName(baseFolder + "/MyLoggingSettlingSphere_");
   loggingFileName += std::to_string(fluidType);
   loggingFileName += ".txt";
   if (fileIO) {
     WALBERLA_LOG_INFO_ON_ROOT(" - writing logging output to file \""
                               << loggingFileName << "\"");
   }
-  // std::shared_ptr<std::function<void()>> SpherePropertyLogger;
-  //
-  //
-  // timeloop.addFuncAfterTimeStep(walberla::SharedFunctor<SpherePropertyLogger>(logger),
-  //                               "Sphere property logger");
 
   Vector3<real_t> gravitationalForce(real_t(0), real_t(0),
                                      -(densitySphere - densityFluid) *
                                          gravitationalAcceleration *
                                          sphereVolume);
-  lb->set_particle_force(sphere_uid, to_vector3d(gravitationalForce));
-  WALBERLA_LOG_INFO_ON_ROOT("AAAAAAAAAAAAAAAAAAAAA 3") // TODO: remove
+  // TODO:
+  // lb->set_particle_force(sphere_uid, to_vector3d(gravitationalForce));
 
   // TODO: Wozu ist das notwendig?
+  lb->add_global_pe_force(to_vector3d(gravitationalForce),
+                          "Gravitational force");
   // timeloop.addFuncAfterTimeStep(pe_coupling::ForceOnBodiesAdder(
   //                                   blocks, bodyStorageID,
   //                                   gravitationalForce),
   //                               "Gravitational force");
+
+  if (fileIO) {
+    WALBERLA_ROOT_SECTION() {
+      std::ofstream file;
+      file.open(loggingFileName.c_str());
+      file << "#\t t\t posX\t posY\t gapZ\t velX\t velY\t velZ\n";
+      file.close();
+    }
+  }
 
   ////////////////////////
   // EXECUTE SIMULATION //
@@ -315,27 +330,67 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
       diameter; // right before sphere touches the bottom wall
 
   // time loop
-  Vector3d trans_vel{0.0, 0.0, 0.0};
+  Vector3d vel{0, 0, 0};
+  Vector3d pos{0, 0, 0};
+  Vector3d force{0, 0, 0};
   double max_velocity = 0.0;
-  WALBERLA_LOG_INFO_ON_ROOT(
-      "AAAAAAAAAAAAAAAAAAAAA 4 (Bis hier tut es noch)") // TODO: remove
   for (uint_t i = 0; i < timesteps; ++i) {
+    WALBERLA_LOG_INFO_ON_ROOT("Timestep " << i << ": ");
     // perform a single simulation step
     lb->integrate();
 
-    // auto vel = lb->get_particle_velocity(sphere_uid);
-    // if (vel)
-    //   trans_vel = *vel;
-    // auto pos = lb->get_particle_position(sphere_uid);
-    // max_velocity = std::max(max_velocity, -trans_vel[2]);
-    // if (pos && (*pos)[2] < terminationPosition) {
-    //   WALBERLA_LOG_INFO_ON_ROOT("Sphere reached terminal position "
-    //                             << (*pos)[2] << " after " << i
-    //                             << " timesteps!");
-    //   break;
-    // }
+    // Get position and velocity of Sphere from all mpi processes
+    auto p = lb->get_particle_position(sphere_uid);
+    auto v = lb->get_particle_velocity(sphere_uid);
+    auto f = lb->get_particle_force(sphere_uid);
+    pos = p ? *p : Vector3d{0, 0, 0};
+    vel = v ? *v : Vector3d{0, 0, 0};
+    force = f ? *f : Vector3d{0, 0, 0};
+    MPI_Allreduce(MPI_IN_PLACE, &pos[0], 1, MPI_DOUBLE, MPI_SUM,
+                  MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &pos[1], 1, MPI_DOUBLE, MPI_SUM,
+                  MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &pos[2], 1, MPI_DOUBLE, MPI_SUM,
+                  MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &vel[0], 1, MPI_DOUBLE, MPI_SUM,
+                  MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &vel[1], 1, MPI_DOUBLE, MPI_SUM,
+                  MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &vel[2], 1, MPI_DOUBLE, MPI_SUM,
+                  MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &force[0], 1, MPI_DOUBLE, MPI_SUM,
+                  MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &force[1], 1, MPI_DOUBLE, MPI_SUM,
+                  MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &force[2], 1, MPI_DOUBLE, MPI_SUM,
+                  MPI_COMM_WORLD);
+
+    max_velocity = std::max(max_velocity, -vel[2]);
+
+    // Logging
+    // ----------------------------------------------------------
+    WALBERLA_ROOT_SECTION() {
+      std::ofstream file;
+      file.open(loggingFileName.c_str(), std::ofstream::app);
+
+      auto scaledPosition = pos / diameter;
+      auto velocity_SI = vel * dx_SI / dt_SI;
+
+      file << i << "\t" << real_c(i) * dt_SI << "\t"
+           << "\t" << scaledPosition[0] << "\t" << scaledPosition[1] << "\t"
+           << scaledPosition[2] - real_t(0.5) << "\t" << velocity_SI[0] << "\t"
+           << velocity_SI[1] << "\t" << velocity_SI[2] << "\t" << force[0]
+           << "\t" << force[1] << "\t" << force[2] << "\n";
+      file.close();
+    }
+    // ----------------------------------------------------------
+
+    if (pos[2] < terminationPosition) {
+      WALBERLA_LOG_INFO_ON_ROOT("Sphere reached terminal position "
+                                << pos[2] << " after " << i << " timesteps!");
+      break;
+    }
   }
-  WALBERLA_LOG_INFO_ON_ROOT("AAAAAAAAAAAAAAAAAAAAA 5") // TODO: remove
 
   // check the result
   if (!funcTest && !shortrun) {
@@ -350,7 +405,6 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
     // the relative error has to be below 10%
     BOOST_CHECK(relErr < 0.1);
   }
-  WALBERLA_LOG_INFO_ON_ROOT("AAAAAAAAAAAAAAAAAAAAA ENDE") // TODO: remove
 }
 
 int main(int argc, char **argv) {
