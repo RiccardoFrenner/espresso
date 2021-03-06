@@ -271,6 +271,9 @@ public:
       }
     }
 
+    // TODO: SettlingSphere Test in Walberla has two more options which are
+    // includeMetis and forceMetis. One of them is set to it's non-default value
+    // in the test.
     m_blocks = blockforest::createUniformBlockGrid(
         uint_c(node_grid[0]), // blocks in x direction
         uint_c(node_grid[1]), // blocks in y direction
@@ -464,7 +467,7 @@ public:
     // add pe timesteps
     const uint_t numPeSubcycles = uint_c(1); // TODO: member? getter, setter?
     std::function<void(void)> syncCall =
-        std::bind(pe::syncNextNeighbors<BodyTypeTuple>,
+        std::bind(pe::syncShadowOwners<BodyTypeTuple>,
                   std::ref(m_blocks->getBlockForest()), m_body_storage_id,
                   static_cast<WcTimingTree *>(nullptr), real_t(1.5),
                   false); // TODO: replace
@@ -1009,8 +1012,8 @@ public:
     // for more information
     real_t dx = real_t(1); // hardcoded in createUniformBlockGrid above
     real_t overlap = real_t(1.5) * dx;
-    // TODO: Difference between syncShadowOwners?
-    pe::syncNextNeighbors<BodyTypeTuple>(
+    // TODO: Difference between syncShadowOwners and syncNextNeigbors?
+    pe::syncShadowOwners<BodyTypeTuple>(
         m_blocks->getBlockForest(), m_body_storage_id,
         static_cast<WcTimingTree *>(nullptr), overlap, false);
   }
@@ -1048,7 +1051,27 @@ public:
     }
     return {};
   }
-  void set_particle_force(std::uint64_t uid, const Utils::Vector3d &f) {
+
+  boost::optional<Utils::Vector3d>
+  get_particle_force(std::uint64_t uid) const override {
+    pe::BodyID p = get_pe_particle(uid);
+    if (p != nullptr) {
+      return {to_vector3d(p->getForce())};
+    }
+    return {};
+  }
+
+  boost::optional<Utils::Vector3d>
+  get_particle_torque(std::uint64_t uid) const override {
+    pe::BodyID p = get_pe_particle(uid);
+    if (p != nullptr) {
+      return {to_vector3d(p->getTorque())};
+    }
+    return {};
+  }
+
+  void set_particle_force(std::uint64_t uid,
+                          const Utils::Vector3d &f) override {
     pe::BodyID p = get_pe_particle(uid);
     if (p != nullptr) {
       p->setForce(to_vector3(f));
@@ -1056,7 +1079,8 @@ public:
     // If particle not on the calling rank, nothing happens.
     // TODO: Is this the wanted behaviour?
   }
-  void set_particle_torque(std::uint64_t uid, const Utils::Vector3d &tau) {
+  void set_particle_torque(std::uint64_t uid,
+                           const Utils::Vector3d &tau) override {
     pe::BodyID p = get_pe_particle(uid);
     if (p != nullptr) {
       p->setTorque(to_vector3(tau));
@@ -1067,15 +1091,24 @@ public:
 
   void createMaterial(const std::string &name, double density, double cor,
                       double csf, double cdf, double poisson, double young,
-                      double stiffness, double dampingN, double dampingT) {
+                      double stiffness, double dampingN,
+                      double dampingT) override {
 
     pe::createMaterial(name, real_c(density), real_c(cor), real_c(csf),
                        real_c(cdf), real_c(poisson), real_c(young),
                        real_c(stiffness), real_c(dampingN), real_c(dampingT));
   }
 
+  void add_global_pe_force(const Utils::Vector3d &f,
+                           const std::string &id) override {
+    m_time_loop->addFuncAfterTimeStep(
+        pe_coupling::ForceOnBodiesAdder(m_blocks, m_body_storage_id,
+                                        to_vector3(f)),
+        id);
+  }
+
   // pe coupling interface functions
-  void map_moving_bodies() {
+  void map_moving_bodies() override {
     pe_coupling::mapMovingBodies<Boundaries>(
         *m_blocks, m_boundary_handling_id, m_body_storage_id,
         *m_globalBodyStorage, m_body_field_id, MO_BB_Flag,
