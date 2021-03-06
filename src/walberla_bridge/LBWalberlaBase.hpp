@@ -175,6 +175,10 @@ public:
   get_particle_orientation(std::uint64_t uid) const = 0;
   virtual boost::optional<Utils::Vector3d>
   get_particle_position(std::uint64_t uid) const = 0;
+  virtual boost::optional<Utils::Vector3d>
+  get_particle_force(std::uint64_t uid) const = 0;
+  virtual boost::optional<Utils::Vector3d>
+  get_particle_torque(std::uint64_t uid) const = 0;
   virtual void set_particle_force(std::uint64_t uid,
                                   const Utils::Vector3d &f) = 0;
   virtual void set_particle_torque(std::uint64_t uid,
@@ -189,6 +193,8 @@ public:
   virtual void map_moving_bodies() = 0;
   virtual void add_func_after_time_step(const std::function<void()> &f,
                                         const std::string &id) = 0;
+  virtual void add_global_pe_force(const Utils::Vector3d &f,
+                                   const std::string &id) = 0;
 
   virtual ~LBWalberlaBase() = default;
 };
