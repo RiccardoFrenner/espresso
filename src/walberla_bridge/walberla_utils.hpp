@@ -60,6 +60,30 @@ Utils::Quaternion<T> to_quaternion(const math::Quaternion<T> quat) {
   return q;
 }
 
+struct PE_Parameters {
+  bool useMO = false; // If false the rest is not needed to be changed
+  bool syncShadowOwners = true;
+
+  // pe_sync_overlap = overlapFactor * dx
+  // Where dx is the LB cell length
+  real_t overlapFactor = real_t(1.5);
+
+  bool averageForceTorqueOverTwoTimSteps = true;
+  uint_t numPeSubCycles = 1;
+  std::vector<std::pair<Vector3<real_t>, std::string>> constantGlobalForces =
+      {};
+
+  PE_Parameters() {}
+
+  PE_Parameters(bool p_useMO, bool p_syncShadowOwners, real_t p_overlapFactor,
+                bool p_averageForceTorqueOverTwoTimSteps,
+                uint_t p_numPeSubCycles)
+      : useMO(p_useMO), syncShadowOwners(p_syncShadowOwners),
+        overlapFactor(p_overlapFactor),
+        averageForceTorqueOverTwoTimSteps(p_averageForceTorqueOverTwoTimSteps),
+        numPeSubCycles(p_numPeSubCycles) {}
+};
+
 // Helpers to retrieve blocks and cells
 struct BlockAndCell {
   IBlock *block;

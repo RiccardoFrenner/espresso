@@ -42,9 +42,10 @@ public:
                                 const Utils::Vector3d &box_dimensions,
                                 const Utils::Vector3i &node_grid,
                                 int n_ghost_layers, double kT,
-                                unsigned int seed)
+                                unsigned int seed,
+                                const PE_Parameters &peParams = PE_Parameters())
       : LBWalberlaImpl(viscosity, agrid, tau, box_dimensions, node_grid,
-                       n_ghost_layers) {
+                       n_ghost_layers, peParams) {
     m_kT = kT;
     construct_lattice_model(viscosity, kT, seed);
     setup_with_valid_lattice_model(density);

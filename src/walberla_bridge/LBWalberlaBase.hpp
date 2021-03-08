@@ -179,9 +179,13 @@ public:
   get_particle_force(std::uint64_t uid) const = 0;
   virtual boost::optional<Utils::Vector3d>
   get_particle_torque(std::uint64_t uid) const = 0;
-  virtual void set_particle_force(std::uint64_t uid,
+  virtual bool set_particle_force(std::uint64_t uid,
                                   const Utils::Vector3d &f) = 0;
-  virtual void set_particle_torque(std::uint64_t uid,
+  virtual bool add_particle_force(std::uint64_t uid,
+                                  const Utils::Vector3d &f) = 0;
+  virtual bool set_particle_torque(std::uint64_t uid,
+                                   const Utils::Vector3d &tau) = 0;
+  virtual bool add_particle_torque(std::uint64_t uid,
                                    const Utils::Vector3d &tau) = 0;
 
   // TODO: Again, walberla uses real_t ... what should I use?
