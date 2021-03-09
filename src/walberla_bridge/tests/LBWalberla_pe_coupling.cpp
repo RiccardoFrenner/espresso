@@ -64,8 +64,9 @@ constexpr unsigned int seed = 3;
 constexpr double kT = 0.0014;
 
 BOOST_AUTO_TEST_CASE(add_particle_inside_domain) {
-  auto lb = std::make_shared<LBWalberlaD3Q19MRT>(viscosity, density, agrid, tau,
-                                                 box_dimensions, mpi_shape, 1);
+  walberla::PE_Parameters peParams(true, true, 1.5, true, 1);
+  auto lb = std::make_shared<LBWalberlaD3Q19MRT>(
+      viscosity, density, agrid, tau, box_dimensions, mpi_shape, 1, peParams);
 
   // Create particle
   std::uint64_t uid = 12;
@@ -104,8 +105,9 @@ BOOST_AUTO_TEST_CASE(add_particle_inside_domain) {
 }
 
 BOOST_AUTO_TEST_CASE(remove_particle) {
-  auto lb = std::make_shared<LBWalberlaD3Q19MRT>(viscosity, density, agrid, tau,
-                                                 box_dimensions, mpi_shape, 1);
+  walberla::PE_Parameters peParams(true, true, 1.5, true, 1);
+  auto lb = std::make_shared<LBWalberlaD3Q19MRT>(
+      viscosity, density, agrid, tau, box_dimensions, mpi_shape, 1, peParams);
 
   // Create particle
   std::uint64_t uid = 12;
@@ -142,13 +144,32 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
 
   // simulation control
   bool shortrun = false;
-  bool funcTest = false; // TODO: set to false when testing convergence
+  bool funcTest = false;
   bool fileIO = true;
-  uint_t vtkIOFreq = 0;
   std::string baseFolder = "vtk_out_SettlingSphere";
 
   // physical setup
   uint_t fluidType = 1;
+
+  // numerical parameters
+  uint_t numberOfCellsInHorizontalDirection = uint_t(100);
+  bool averageForceTorqueOverTwoTimSteps = true;
+
+  if (funcTest) {
+    walberla::logging::Logging::instance()->setLogLevel(
+        walberla::logging::Logging::LogLevel::WARNING);
+  }
+
+  if (fileIO) {
+    // create base directory if it does not yet exist
+    walberla::filesystem::path tpath(baseFolder);
+    if (!walberla::filesystem::exists(tpath))
+      walberla::filesystem::create_directory(tpath);
+  }
+
+  //////////////////////////////////////
+  // SIMULATION PROPERTIES in SI units//
+  //////////////////////////////////////
 
   // values are mainly taken from the reference paper
   const real_t diameter_SI = real_t(15e-3);
@@ -185,7 +206,6 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
     WALBERLA_ABORT("Only four different fluids are supported! Choose type "
                    "between 1 and 4.");
   }
-
   const real_t kinematicViscosityFluid_SI =
       dynamicViscosityFluid_SI / densityFluid_SI;
 
@@ -211,7 +231,7 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
   //////////////////////////
   // NUMERICAL PARAMETERS //
   //////////////////////////
-  uint_t numberOfCellsInHorizontalDirection = uint_t(100);
+
   const real_t dx_SI =
       domainSize_SI[0] / real_c(numberOfCellsInHorizontalDirection);
   const Vector3<uint_t> domainSize(
@@ -257,40 +277,37 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
                             << expectedSettlingVelocity << " --> Re_p = "
                             << expectedSettlingVelocity * diameter / viscosity);
 
-  if (vtkIOFreq > 0) {
-    WALBERLA_LOG_INFO_ON_ROOT(" - writing vtk files to folder \""
-                              << baseFolder << "\" with frequency "
-                              << vtkIOFreq);
-  }
-
   ///////////////////////////
   // BLOCK STRUCTURE SETUP //
   ///////////////////////////
 
-  // Vector3i numberOfBlocksPerDirection{1, 1, 1};
-  Vector3d box_dimensions{(double)domainSize[0], (double)domainSize[1],
-                          (double)domainSize[2]};
+  // Vector3<uint_t> numberOfBlocksPerDirection(uint_t(5), uint_t(5),
+  // uint_t(8)); // TODO
+  Vector3<uint_t> numberOfBlocksPerDirection(uint_t(1), uint_t(1), uint_t(1));
+  Vector3<uint_t> cellsPerBlockPerDirection(
+      domainSize[0] / numberOfBlocksPerDirection[0],
+      domainSize[1] / numberOfBlocksPerDirection[1],
+      domainSize[2] / numberOfBlocksPerDirection[2]);
+  for (uint_t i = 0; i < 3; ++i) {
+    WALBERLA_CHECK_EQUAL(
+        cellsPerBlockPerDirection[i] * numberOfBlocksPerDirection[i],
+        domainSize[i],
+        "Unmatching domain decomposition in direction " << i << "!");
+  }
 
-  double agrid = 1.0;
-  auto lb = std::make_shared<LBWalberlaD3Q19MRT>(
-      viscosity, densityFluid, agrid, tau, box_dimensions, mpi_shape, 1);
-  // add the sphere
-  lb->createMaterial("mySphereMat", densitySphere, real_t(0.5), real_t(0.1),
-                     real_t(0.1), real_t(0.24), real_t(200), real_t(200),
-                     real_t(0), real_t(0));
+  WALBERLA_LOG_INFO_ON_ROOT("Domain decomposition:");
+  WALBERLA_LOG_INFO_ON_ROOT(
+      " - blocks per direction = " << numberOfBlocksPerDirection);
+  WALBERLA_LOG_INFO_ON_ROOT(
+      " - cells per block = " << cellsPerBlockPerDirection);
+
+  const real_t overlap = real_t(1.5) * dx;
+  const bool syncShadowOwners = true;
   Vector3<real_t> initialPosition(
       real_t(0.5) * real_c(domainSize[0]), real_t(0.5) * real_c(domainSize[1]),
       startingGapSize_SI / dx_SI + real_t(0.5) * diameter);
-  Vector3<real_t> linearVelocity(real_t(0), real_t(0), real_t(0));
-  uint sphere_uid = 123;
-  lb->add_pe_particle(sphere_uid, to_vector3d(initialPosition),
-                      real_t(0.5) * diameter, to_vector3d(linearVelocity),
-                      "mySphereMat");
-  lb->sync_pe_particles();
-  lb->map_moving_bodies();
 
-  // check for convergence of the particle position
-  std::string loggingFileName(baseFolder + "/MyLoggingSettlingSphere_");
+  std::string loggingFileName(baseFolder + "/LoggingSettlingSphere_");
   loggingFileName += std::to_string(fluidType);
   loggingFileName += ".txt";
   if (fileIO) {
@@ -302,16 +319,32 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
                                      -(densitySphere - densityFluid) *
                                          gravitationalAcceleration *
                                          sphereVolume);
-  // TODO:
-  // lb->set_particle_force(sphere_uid, to_vector3d(gravitationalForce));
 
-  // TODO: Wozu ist das notwendig?
-  lb->add_global_pe_force(to_vector3d(gravitationalForce),
-                          "Gravitational force");
-  // timeloop.addFuncAfterTimeStep(pe_coupling::ForceOnBodiesAdder(
-  //                                   blocks, bodyStorageID,
-  //                                   gravitationalForce),
-  //                               "Gravitational force");
+  real_t terminationPosition =
+      diameter; // right before sphere touches the bottom wall
+
+  Vector3<real_t> linearVelocity(real_t(0), real_t(0), real_t(0));
+  uint sphere_uid = 123;
+  double agrid = dx_SI;
+  const int n_ghost_layers = 1;
+  Vector3d box_dimensions = to_vector3d(domainSize_SI);
+
+  walberla::PE_Parameters peParams(true, syncShadowOwners, overlap / dx,
+                                   averageForceTorqueOverTwoTimSteps,
+                                   numPeSubCycles);
+  peParams.constantGlobalForces.push_back(
+      {gravitationalForce, "Gravitational Force"});
+
+  auto lb = std::make_shared<LBWalberlaD3Q19MRT>(viscosity, densityFluid, agrid,
+                                                 tau, box_dimensions, mpi_shape,
+                                                 n_ghost_layers, peParams);
+
+  // add the sphere
+  lb->createMaterial("mySphereMat", densitySphere);
+  lb->add_pe_particle(sphere_uid, to_vector3d(initialPosition),
+                      real_t(0.5) * diameter, to_vector3d(linearVelocity),
+                      "mySphereMat");
+  lb->finish_particle_adding();
 
   if (fileIO) {
     WALBERLA_ROOT_SECTION() {
@@ -325,9 +358,6 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
   ////////////////////////
   // EXECUTE SIMULATION //
   ////////////////////////
-
-  real_t terminationPosition =
-      diameter; // right before sphere touches the bottom wall
 
   // time loop
   Vector3d vel{0, 0, 0};

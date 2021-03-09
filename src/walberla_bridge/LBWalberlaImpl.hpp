@@ -26,12 +26,11 @@
  * models created by lbmpy (see <tt>maintainer/walberla_kernels</tt>).
  */
 
-#pragma region Includes
-
 #include "blockforest/Initialization.h"
 #include "blockforest/StructuredBlockForest.h"
 #include "blockforest/communication/UniformBufferedScheme.h"
 #include "boundary/BoundaryHandling.h"
+#include "core/SharedFunctor.h"
 #include "field/GhostLayerField.h"
 #include "field/adaptors/GhostLayerFieldAdaptor.h"
 #include "field/vtk/FlagFieldCellFilter.h"
@@ -99,8 +98,6 @@
 #include <utility>
 #include <vector>
 
-#pragma endregion Includes
-
 namespace walberla {
 
 // Flags marking fluid and boundaries
@@ -137,7 +134,7 @@ protected:
   // ´EquilibriumAndNonEquilibriumReconstructor´ and
   // ´ExtrapolationReconstructor´
   typedef pe_coupling::EquilibriumAndNonEquilibriumReconstructor<
-      typename LatticeModel, MOBoundaries,
+      LatticeModel, BoundaryHandling_T,
       pe_coupling::SphereNormalExtrapolationDirectionFinder>
       Reconstructor_T;
 
@@ -193,6 +190,7 @@ protected:
   // PE private members
   real_t m_pe_sync_overlap;
   PE_Parameters peParams_;
+
   // Global particle storage (for very large particles), stored on all processes
   std::shared_ptr<pe::BodyStorage> m_globalBodyStorage;
 
@@ -204,7 +202,7 @@ protected:
   BlockDataID m_fcdID;
 
   // pe time integrator
-  std::shared_ptr<pe::cr::HCSITS> m_cr;
+  std::shared_ptr<pe::cr::DEM> m_cr;
 
   // storage for force/torque to average over two timesteps
   shared_ptr<pe_coupling::BodiesForceTorqueContainer> bodiesFTContainer1_;
@@ -272,9 +270,11 @@ protected:
       WALBERLA_ASSERT_NOT_NULLPTR(block);
       WALBERLA_ASSERT_NOT_NULLPTR(storage);
 
-      FlagField *flagField = block->getData<FlagField>(flagFieldID_);
-      PdfField *pdfField = block->getData<PdfField>(pdfFieldID_);
-      BodyField_T *bodyField = block->getData<BodyField_T>(bodyFieldID_);
+      // TODO: template???
+      FlagField *flagField = block->template getData<FlagField>(flagFieldID_);
+      PdfField *pdfField = block->template getData<PdfField>(pdfFieldID_);
+      BodyField_T *bodyField =
+          block->template getData<BodyField_T>(bodyFieldID_);
 
       const auto fluid = flagField->flagExists(Fluid_flag)
                              ? flagField->getFlag(Fluid_flag)
@@ -302,6 +302,10 @@ protected:
   }; // class MOBoundaryHandling
 
 private:
+  bool useMO() { return peParams_.useMO; }
+
+  bool isPEInitialized() { return isPEInitialized_; }
+
   void initForceAveraging() {
     bodiesFTContainer1_ = make_shared<pe_coupling::BodiesForceTorqueContainer>(
         m_blocks, m_body_storage_id);
@@ -322,7 +326,10 @@ private:
   void initPEFields() {
     // add body field
     m_body_field_id = field::addToStorage<BodyField_T>(
-        m_blocks, "body field", nullptr, field::zyxf, m_n_ghost_layers);
+        m_blocks, "body field", nullptr,
+        field::zyxf /*, m_n_ghost_layers*/); // TODO: Should it have a ghost
+                                             // layer? If so, is
+                                             // m_n_ghost_layers correct?
   }
 
   void setupBodySynchronization() {
@@ -346,13 +353,13 @@ private:
         throw std::runtime_error("PE is not initialized");
       }
       m_boundary_handling_id =
-          blocks_->addStructuredBlockData<BoundaryHandling_T>(
-              MyBoundaryHandling(m_flag_field_id, m_pdf_field_id,
+          m_blocks->addStructuredBlockData<BoundaryHandling_T>(
+              MOBoundaryHandling(m_flag_field_id, m_pdf_field_id,
                                  m_body_field_id),
               "MO boundary handling");
     } else {
       // add simple boundary handling
-      m_boundary_handling_id = blocks_->addStructuredBlockData<Boundaries>(
+      m_boundary_handling_id = m_blocks->addStructuredBlockData<Boundaries>(
           LBBoundaryHandling(m_flag_field_id, m_pdf_field_id),
           "BB boundary handling");
     }
@@ -383,10 +390,11 @@ private:
 
       // add LBM communication function and boundary handling sweep (does the
       // hydro force calculations and the no-slip treatment)
-      m_time_loop->add() /*<< timeloop::BeforeFunction(m_communication, "LBM Communication")*/
-                         << timeloop::Sweep(BoundaryHandling_T::getBlockSweep(
-                                      m_boundary_handling_id),
-                                  "MO Boundary Handling");
+      m_time_loop->add() /*<< timeloop::BeforeFunction(*m_communication, "LBM
+                            Communication")*/
+          << timeloop::Sweep(
+                 BoundaryHandling_T::getBlockSweep(m_boundary_handling_id),
+                 "MO Boundary Handling");
 
       m_time_loop->add() << timeloop::Sweep(makeSharedSweep(m_reset_force),
                                             "Reset force fields");
@@ -396,10 +404,10 @@ private:
 
       // add LBM communication function and boundary handling sweep (does only
       // the no-slip treatment)
-      m_time_loop->add() /*<< timeloop::BeforeFunction(m_communication, "LBM Communication")*/
-                         << timeloop::Sweep(SimpleBoundaryHandling_T::getBlockSweep(
-                                      m_boundary_handling_id),
-                                  "Simple Boundary Handling");
+      m_time_loop->add() /*<< timeloop::BeforeFunction(*m_communication, "LBM
+                            Communication")*/
+          << timeloop::Sweep(Boundaries::getBlockSweep(m_boundary_handling_id),
+                             "Simple Boundary Handling");
     }
 
     // TODO: In SettlingSphere the communication function is added as an
@@ -500,14 +508,12 @@ private:
   }
 
 public:
-  bool useMO() { return peParams_.useMO; }
-  bool isPEInitialized() { return isPEInitialized_; }
-
   LBWalberlaImpl(double viscosity, double agrid, double tau,
                  const Utils::Vector3d &box_dimensions,
                  const Utils::Vector3i &node_grid, int n_ghost_layers,
-                 const PE_Parameters &peParams = PE_Parameters())
-      : peParams_(peParams) {
+                 const PE_Parameters &peParams = PE_Parameters()) {
+
+    peParams_ = peParams;
 
     m_n_ghost_layers = n_ghost_layers;
 
@@ -560,7 +566,12 @@ public:
         m_blocks, "flag field", m_n_ghost_layers);
 
     // Set overlap for pe particle syncronization routine
-    m_pe_sync_overlap = peParams_.overlapFactor * 1.0;
+    // overlap of 1.5 * lattice grid spacing is needed for correct mapping
+    // see
+    // https://www.walberla.net/doxygen/group__pe__coupling.html#reconstruction
+    // for more information
+    const double lattice_grid_spacing = 1.0; // aka. `Lattice constant` above
+    m_pe_sync_overlap = peParams_.overlapFactor * lattice_grid_spacing;
 
     // Init body statistics
     // m_bodyStats =
@@ -574,8 +585,9 @@ public:
         m_blocks, "pdf field", *(m_lattice_model.get()),
         to_vector3(Utils::Vector3d{}), real_t(density), m_n_ghost_layers);
 
-    if (useMO())
+    if (useMO()) {
       initPE();
+    }
 
     // Register boundary handling
     setupBoundaryHandling();
@@ -1082,12 +1094,6 @@ public:
     }
   }
 
-  // TODO: Do I really need this to track settling sphere pos/vel?
-  void add_func_after_time_step(const std::function<void()> &f,
-                                const std::string &id) {
-    m_time_loop->addFuncAfterTimeStep(f, id);
-  }
-
   // pe utility functions
   pe::BodyID get_pe_particle(std::uint64_t uid) const {
     auto it = m_pe_particles.find(uid);
@@ -1135,16 +1141,10 @@ public:
   /** @brief Call after all pe particles have been added to sync them on all
    * blocks */
   void sync_pe_particles() override {
-    // overlap of 1.5 * lattice grid spacing is needed for correct mapping
-    // see
-    // https://www.walberla.net/doxygen/group__pe__coupling.html#reconstruction
-    // for more information
-    real_t dx = real_t(1); // hardcoded in createUniformBlockGrid above
-    real_t overlap = real_t(1.5) * dx;
-    // TODO: Difference between syncShadowOwners and syncNextNeigbors?
-    pe::syncShadowOwners<BodyTypeTuple>(
-        m_blocks->getBlockForest(), m_body_storage_id,
-        static_cast<WcTimingTree *>(nullptr), overlap, false);
+    if (!isPEInitialized()) {
+      throw std::runtime_error("PE is not initialized");
+    }
+    syncCall_();
   }
 
   boost::optional<Utils::Vector3d>
@@ -1163,7 +1163,6 @@ public:
     }
     return {};
   }
-  // TODO: Somehow use real_t instead of always double
   boost::optional<Utils::Quaternion<double>>
   get_particle_orientation(std::uint64_t uid) const override {
     pe::BodyID p = get_pe_particle(uid);
@@ -1180,7 +1179,6 @@ public:
     }
     return {};
   }
-
   boost::optional<Utils::Vector3d>
   get_particle_force(std::uint64_t uid) const override {
     pe::BodyID p = get_pe_particle(uid);
@@ -1189,7 +1187,6 @@ public:
     }
     return {};
   }
-
   boost::optional<Utils::Vector3d>
   get_particle_torque(std::uint64_t uid) const override {
     pe::BodyID p = get_pe_particle(uid);
@@ -1223,7 +1220,7 @@ public:
     if (p == nullptr)
       return false;
 
-    p->setTorque(to_vector3(f));
+    p->setTorque(to_vector3(tau));
     return true;
   }
   bool add_particle_torque(std::uint64_t uid,
@@ -1232,7 +1229,7 @@ public:
     if (p == nullptr)
       return false;
 
-    p->addTorque(to_vector3(f));
+    p->addTorque(to_vector3(tau));
     return true;
   }
 
@@ -1245,21 +1242,26 @@ public:
                        real_c(cdf), real_c(poisson), real_c(young),
                        real_c(stiffness), real_c(dampingN), real_c(dampingT));
   }
-
-  void add_global_pe_force(const Utils::Vector3d &f,
-                           const std::string &id) override {
-    m_time_loop->addFuncAfterTimeStep(
-        pe_coupling::ForceOnBodiesAdder(m_blocks, m_body_storage_id,
-                                        to_vector3(f)),
-        id);
+  void createMaterial(const std::string &name, double density) {
+    pe::createMaterial(name, density, real_t(0.5), real_t(0.1), real_t(0.1),
+                       real_t(0.24), real_t(200), real_t(200), real_t(0),
+                       real_t(0));
   }
-
-  // pe coupling interface functions
   void map_moving_bodies() override {
-    pe_coupling::mapMovingBodies<Boundaries>(
+    pe_coupling::mapMovingBodies<BoundaryHandling_T>(
         *m_blocks, m_boundary_handling_id, m_body_storage_id,
         *m_globalBodyStorage, m_body_field_id, MO_BB_Flag,
         pe_coupling::selectRegularBodies);
+  }
+  void finish_particle_adding() override {
+    if (!isPEInitialized()) {
+      throw std::runtime_error("PE is not initialized");
+    }
+    sync_pe_particles();
+    map_moving_bodies();
+    if (peParams_.averageForceTorqueOverTwoTimSteps) {
+      bodiesFTContainer2_->store();
+    }
   }
 
   ~LBWalberlaImpl() override = default;
