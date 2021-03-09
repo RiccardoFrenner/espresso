@@ -37,6 +37,22 @@ public:
     LatticeModel *lm = dynamic_cast<LatticeModel *>(m_lattice_model.get());
     return (2 - lm->omega_shear_) / (6 * lm->omega_shear_);
   };
+
+  LBWalberlaD3Q19FluctuatingMRT(double viscosity, double density, double tau,
+                                const Utils::Vector3i &n_blocks,
+                                const Utils::Vector3i &n_cells_per_block,
+                                const double lb_cell_size,
+                                const Utils::Vector3i &n_processes,
+                                int n_ghost_layers, double kT,
+                                unsigned int seed,
+                                const PE_Parameters &peParams = PE_Parameters())
+      : LBWalberlaImpl(n_blocks, n_cells_per_block, lb_cell_size, n_processes,
+                       n_ghost_layers, peParams) {
+    m_kT = kT;
+    construct_lattice_model(viscosity, kT, seed);
+    setup_with_valid_lattice_model(density);
+  };
+
   LBWalberlaD3Q19FluctuatingMRT(double viscosity, double density, double agrid,
                                 double tau,
                                 const Utils::Vector3d &box_dimensions,

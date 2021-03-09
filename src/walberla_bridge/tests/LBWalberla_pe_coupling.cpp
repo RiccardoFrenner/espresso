@@ -152,7 +152,8 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
   uint_t fluidType = 1;
 
   // numerical parameters
-  uint_t numberOfCellsInHorizontalDirection = uint_t(100);
+  // uint_t numberOfCellsInHorizontalDirection = uint_t(100); // TODO
+  uint_t numberOfCellsInHorizontalDirection = uint_t(120); // TODO
   bool averageForceTorqueOverTwoTimSteps = true;
 
   if (funcTest) {
@@ -210,7 +211,10 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
       dynamicViscosityFluid_SI / densityFluid_SI;
 
   const real_t gravitationalAcceleration_SI = real_t(9.81);
-  Vector3<real_t> domainSize_SI(real_t(100e-3), real_t(100e-3), real_t(160e-3));
+  // Vector3<real_t> domainSize_SI(real_t(100e-3), real_t(100e-3),
+  // real_t(160e-3)); // TODO
+  Vector3<real_t> domainSize_SI(real_t(120e-3), real_t(120e-3),
+                                real_t(180e-3)); // TODO
   // shift starting gap a bit upwards to match the reported (plotted) values
   const real_t startingGapSize_SI = real_t(120e-3) + real_t(0.25) * diameter_SI;
 
@@ -281,9 +285,9 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
   // BLOCK STRUCTURE SETUP //
   ///////////////////////////
 
-  // Vector3<uint_t> numberOfBlocksPerDirection(uint_t(5), uint_t(5),
-  // uint_t(8)); // TODO
-  Vector3<uint_t> numberOfBlocksPerDirection(uint_t(1), uint_t(1), uint_t(1));
+  // Vector3<uint_t> numberOfBlocksPerDirection(mpi_shape[0], mpi_shape[1],
+  //                                            mpi_shape[2]);
+  Vector3<uint_t> numberOfBlocksPerDirection(uint_c(5), uint_c(5), uint_c(8));
   Vector3<uint_t> cellsPerBlockPerDirection(
       domainSize[0] / numberOfBlocksPerDirection[0],
       domainSize[1] / numberOfBlocksPerDirection[1],
@@ -333,11 +337,17 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
                                    averageForceTorqueOverTwoTimSteps,
                                    numPeSubCycles);
   peParams.constantGlobalForces.push_back(
-      {gravitationalForce, "Gravitational Force"});
+      {100 * gravitationalForce, "Gravitational Force"}); // TODO
 
-  auto lb = std::make_shared<LBWalberlaD3Q19MRT>(viscosity, densityFluid, agrid,
-                                                 tau, box_dimensions, mpi_shape,
-                                                 n_ghost_layers, peParams);
+  // auto lb = std::make_shared<LBWalberlaD3Q19MRT>(viscosity, densityFluid,
+  // agrid,
+  //                                                tau, box_dimensions,
+  //                                                mpi_shape, n_ghost_layers,
+  //                                                peParams);
+  auto lb = std::make_shared<LBWalberlaD3Q19MRT>(
+      viscosity, densityFluid, tau, to_vector3d(numberOfBlocksPerDirection),
+      to_vector3d(cellsPerBlockPerDirection), dx_SI, mpi_shape, n_ghost_layers,
+      peParams);
 
   // add the sphere
   lb->createMaterial("mySphereMat", densitySphere);
@@ -366,6 +376,9 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
   double max_velocity = 0.0;
   for (uint_t i = 0; i < timesteps; ++i) {
     WALBERLA_LOG_INFO_ON_ROOT("Timestep " << i << ": ");
+    if (i == 62) {
+      WALBERLA_LOG_INFO_ON_ROOT("AUFPASSEN");
+    }
     // perform a single simulation step
     lb->integrate();
 

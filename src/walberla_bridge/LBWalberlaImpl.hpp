@@ -326,10 +326,10 @@ private:
   void initPEFields() {
     // add body field
     m_body_field_id = field::addToStorage<BodyField_T>(
-        m_blocks, "body field", nullptr,
-        field::zyxf /*, m_n_ghost_layers*/); // TODO: Should it have a ghost
-                                             // layer? If so, is
-                                             // m_n_ghost_layers correct?
+        m_blocks, "body field", nullptr, field::zyxf/*,
+        m_n_ghost_layers*/); // TODO: Should it have a ghost
+                               // layer? If so, is
+                               // m_n_ghost_layers correct?
   }
 
   void setupBodySynchronization() {
@@ -357,6 +357,14 @@ private:
               MOBoundaryHandling(m_flag_field_id, m_pdf_field_id,
                                  m_body_field_id),
               "MO boundary handling");
+
+      // method for restoring PDFs in cells previously occupied by pe bodies
+      extrapolationFinder_ =
+          make_shared<pe_coupling::SphereNormalExtrapolationDirectionFinder>(
+              m_blocks, m_body_field_id);
+      reconstructor_ =
+          make_shared<Reconstructor_T>(m_blocks, m_boundary_handling_id,
+                                       m_body_field_id, *extrapolationFinder_);
     } else {
       // add simple boundary handling
       m_boundary_handling_id = m_blocks->addStructuredBlockData<Boundaries>(
@@ -462,6 +470,8 @@ private:
   }
 
   void initPE() {
+    initPEFields();
+
     m_globalBodyStorage = make_shared<pe::BodyStorage>();
 
     // Init pe body type ids
@@ -487,18 +497,8 @@ private:
         m_globalBodyStorage, m_blocks->getBlockStoragePointer(),
         m_body_storage_id, m_ccdID, m_fcdID, nullptr);
 
-    // set up synchronization procedure
+    // set up body synchronization procedure
     setupBodySynchronization();
-
-    initPEFields();
-
-    // method for restoring PDFs in cells previously occupied by pe bodies
-    extrapolationFinder_ =
-        make_shared<pe_coupling::SphereNormalExtrapolationDirectionFinder>(
-            m_blocks, m_body_field_id);
-    reconstructor_ =
-        make_shared<Reconstructor_T>(m_blocks, m_boundary_handling_id,
-                                     m_body_field_id, *extrapolationFinder_);
 
     if (peParams_.averageForceTorqueOverTwoTimSteps) {
       initForceAveraging();
@@ -507,18 +507,29 @@ private:
     isPEInitialized_ = true;
   }
 
-public:
-  LBWalberlaImpl(double viscosity, double agrid, double tau,
-                 const Utils::Vector3d &box_dimensions,
-                 const Utils::Vector3i &node_grid, int n_ghost_layers,
-                 const PE_Parameters &peParams = PE_Parameters()) {
+  void init_lb_fields() {
+    // Init and register force fields
+    m_last_applied_force_field_id = field::addToStorage<VectorField>(
+        m_blocks, "force field", real_t{0}, field::fzyx, m_n_ghost_layers);
+    m_force_to_be_applied_id = field::addToStorage<VectorField>(
+        m_blocks, "force field", real_t{0}, field::fzyx, m_n_ghost_layers);
 
-    peParams_ = peParams;
+    // Init and register flag field (fluid/boundary)
+    m_flag_field_id = field::addFlagFieldToStorage<FlagField>(
+        m_blocks, "flag field", m_n_ghost_layers);
+  }
 
-    m_n_ghost_layers = n_ghost_layers;
+  void init_blockforest(const Utils::Vector3i &n_blocks,
+                        const Utils::Vector3i &n_cells_per_block,
+                        const double lb_cell_size,
+                        const Utils::Vector3i &n_processes) {
 
-    if (m_n_ghost_layers <= 0)
-      throw std::runtime_error("At least one ghost layer must be used");
+    const Utils::Vector3d box_dimensions{
+        n_blocks[0] * n_cells_per_block[0] * lb_cell_size,
+        n_blocks[1] * n_cells_per_block[1] * lb_cell_size,
+        n_blocks[2] * n_cells_per_block[2] * lb_cell_size};
+    const Utils::Vector3i node_grid(n_processes);
+    const double agrid = lb_cell_size;
 
     for (int i = 0; i < 3; i++) {
       if (fabs(round(box_dimensions[i] / agrid) * agrid - box_dimensions[i]) /
@@ -537,33 +548,46 @@ public:
       }
     }
 
-    // TODO: SettlingSphere Test in Walberla has two more options which are
-    // includeMetis and forceMetis. One of them is set to it's non-default value
-    // in the test.
+    // Attention
+    // If you run a simulation with periodic boundaries you need at least three
+    // blocks in each direction of periodicity!
+    Vector3<bool> periodicity(true, true, true);
+    for (int i = 0; i < 3; i++) {
+      if (periodicity[i] && n_blocks[i] < 3)
+        throw std::runtime_error("Direction " + std::to_string(i) +
+                                 " needs at least three blocks but only " +
+                                 std::to_string(n_blocks[i]) + " where given");
+    }
+
+    // TODO: REMOVE *3 and /3 (I need it because too few cores)
     m_blocks = blockforest::createUniformBlockGrid(
-        uint_c(node_grid[0]), // blocks in x direction
-        uint_c(node_grid[1]), // blocks in y direction
-        uint_c(node_grid[2]), // blocks in z direction
-        uint_c(m_grid_dimensions[0] /
-               node_grid[0]), // number of cells per block in x direction
-        uint_c(m_grid_dimensions[1] /
-               node_grid[1]), // number of cells per block in y direction
-        uint_c(m_grid_dimensions[2] /
-               node_grid[2]), // number of cells per block in z direction
-        1,                    // Lattice constant
-        uint_c(node_grid[0]), uint_c(node_grid[1]),
-        uint_c(node_grid[2]), // cpus per direction
-        true, true, true);
+        uint_c(n_blocks[0]),          // blocks in x direction
+        uint_c(n_blocks[1]),          // blocks in y direction
+        uint_c(n_blocks[2]),          // blocks in z direction
+        uint_c(n_cells_per_block[0]), // cells per block in x direction
+        uint_c(n_cells_per_block[1]), // cells per block in y direction
+        uint_c(n_cells_per_block[2]), // cells per block in z direction
+        1,                            // Lattice constant
+        uint_c(n_processes[0]),       // cpus in x direction
+        uint_c(n_processes[1]),       // cpus in y direction
+        uint_c(n_processes[2]),       // cpus in z direction
+        true, true, true);            // periodicity
+  }
 
-    // Init and register force fields
-    m_last_applied_force_field_id = field::addToStorage<VectorField>(
-        m_blocks, "force field", real_t{0}, field::fzyx, m_n_ghost_layers);
-    m_force_to_be_applied_id = field::addToStorage<VectorField>(
-        m_blocks, "force field", real_t{0}, field::fzyx, m_n_ghost_layers);
+public:
+  LBWalberlaImpl(const Utils::Vector3i &n_blocks,
+                 const Utils::Vector3i &n_cells_per_block,
+                 const double lb_cell_size, const Utils::Vector3i &n_processes,
+                 int n_ghost_layers,
+                 const PE_Parameters &peParams = PE_Parameters())
+      : m_n_ghost_layers(n_ghost_layers), peParams_(peParams) {
 
-    // Init and register flag field (fluid/boundary)
-    m_flag_field_id = field::addFlagFieldToStorage<FlagField>(
-        m_blocks, "flag field", m_n_ghost_layers);
+    if (m_n_ghost_layers <= 0)
+      throw std::runtime_error("At least one ghost layer must be used");
+
+    init_blockforest(n_blocks, n_cells_per_block, lb_cell_size, n_processes);
+
+    init_lb_fields();
 
     // Set overlap for pe particle syncronization routine
     // overlap of 1.5 * lattice grid spacing is needed for correct mapping
@@ -577,6 +601,35 @@ public:
     // m_bodyStats =
     //     std::make_shared<pe::BodyStatistics>(m_blocks, m_body_storage_id);
     // (*m_bodyStats)();
+  }
+
+  LBWalberlaImpl(double viscosity, double agrid, double tau,
+                 const Utils::Vector3d &box_dimensions,
+                 const Utils::Vector3i &node_grid, int n_ghost_layers,
+                 const PE_Parameters &peParams = PE_Parameters()) {
+
+    Utils::Vector3i m_grid_dimensions{
+        int(std::round(box_dimensions[0] / agrid)),
+        int(std::round(box_dimensions[1] / agrid)),
+        int(std::round(box_dimensions[2] / agrid))};
+    Utils::Vector3i n_cells_per_block{int(m_grid_dimensions[0] / node_grid[0]),
+                                      int(m_grid_dimensions[1] / node_grid[1]),
+                                      int(m_grid_dimensions[2] / node_grid[2])};
+
+    if (m_n_ghost_layers <= 0)
+      throw std::runtime_error("At least one ghost layer must be used");
+
+    init_blockforest(node_grid, n_cells_per_block, agrid, node_grid);
+
+    init_lb_fields();
+
+    // Set overlap for pe particle syncronization routine
+    // overlap of 1.5 * lattice grid spacing is needed for correct mapping
+    // see
+    // https://www.walberla.net/doxygen/group__pe__coupling.html#reconstruction
+    // for more information
+    const double lattice_grid_spacing = 1.0; // aka. `Lattice constant` above
+    m_pe_sync_overlap = peParams_.overlapFactor * lattice_grid_spacing;
   };
 
   void setup_with_valid_lattice_model(double density) {
@@ -1269,5 +1322,3 @@ public:
 } // namespace walberla
 
 #endif // LB_WALBERLA_H
-
-// TODO: I have added everything in SegreSilberbergMEM.cpp up to line 737
