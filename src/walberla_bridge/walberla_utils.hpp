@@ -70,7 +70,7 @@ struct PE_Parameters {
 
   bool averageForceTorqueOverTwoTimSteps = true;
   uint_t numPeSubCycles = 1;
-  std::vector<std::pair<Vector3<real_t>, std::string>> constantGlobalForces =
+  std::vector<std::pair<Utils::Vector3d, std::string>> constantGlobalForces =
       {};
 
   PE_Parameters() {}

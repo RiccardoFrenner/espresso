@@ -166,6 +166,7 @@ public:
                                double radius, const Utils::Vector3d &linVel,
                                const std::string &material_name = "iron") = 0;
   virtual void remove_pe_particle(std::uint64_t uid) = 0;
+  virtual bool is_particle_on_this_process(std::uint64_t uid) const = 0;
   virtual boost::optional<Utils::Vector3d>
   get_particle_velocity(std::uint64_t uid) const = 0;
   virtual boost::optional<Utils::Vector3d>
@@ -193,7 +194,7 @@ public:
                               double cor, double csf, double cdf,
                               double poisson, double young, double stiffness,
                               double dampingN, double dampingT) = 0;
-  virtual void createMaterial(const std::string& name, double density) = 0;
+  virtual void createMaterial(const std::string &name, double density) = 0;
   virtual ~LBWalberlaBase() = default;
 };
 
