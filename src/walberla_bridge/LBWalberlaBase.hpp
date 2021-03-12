@@ -162,10 +162,10 @@ public:
   node_indices_positions(bool include_ghosts) const = 0;
 
   // PE
-  virtual bool add_pe_particle(std::uint64_t uid, const Utils::Vector3d &gpos,
+  virtual bool add_particle(std::uint64_t uid, const Utils::Vector3d &gpos,
                                double radius, const Utils::Vector3d &linVel,
                                const std::string &material_name = "iron") = 0;
-  virtual void remove_pe_particle(std::uint64_t uid) = 0;
+  virtual void remove_particle(std::uint64_t uid) = 0;
   virtual bool is_particle_on_this_process(std::uint64_t uid) const = 0;
   virtual boost::optional<Utils::Vector3d>
   get_particle_velocity(std::uint64_t uid) const = 0;
@@ -187,14 +187,16 @@ public:
                                    const Utils::Vector3d &tau) = 0;
   virtual bool add_particle_torque(std::uint64_t uid,
                                    const Utils::Vector3d &tau) = 0;
-  virtual void sync_pe_particles() = 0;
-  virtual void map_moving_bodies() = 0;
+  virtual void sync_particles() = 0;
+  virtual void map_particles_to_lb_grid() = 0;
   virtual void finish_particle_adding() = 0;
-  virtual void createMaterial(const std::string &name, double density,
-                              double cor, double csf, double cdf,
-                              double poisson, double young, double stiffness,
-                              double dampingN, double dampingT) = 0;
-  virtual void createMaterial(const std::string &name, double density) = 0;
+  virtual void create_particle_material(const std::string &name, double density,
+                                        double cor, double csf, double cdf,
+                                        double poisson, double young,
+                                        double stiffness, double dampingN,
+                                        double dampingT) = 0;
+  virtual void create_particle_material(const std::string &name,
+                                        double density) = 0;
   virtual ~LBWalberlaBase() = default;
 };
 

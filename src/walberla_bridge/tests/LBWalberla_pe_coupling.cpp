@@ -57,9 +57,9 @@ BOOST_AUTO_TEST_CASE(add_particle_inside_domain) {
   // Create particle
   std::uint64_t uid = 12;
   double radius = 0.1;
-  Vector3d gpos{0, 0, 0};
-  Vector3d linVel{1.0, 0.2, 0.1};
-  lb->add_pe_particle(uid, gpos, radius, linVel);
+  Vector3d global_pos{0, 0, 0};
+  Vector3d linear_vel{1.0, 0.2, 0.1};
+  lb->add_particle(uid, global_pos, radius, linear_vel);
 
   // Add force/torque
   Vector3d force{0.1, 0.5, 0.22};
@@ -73,8 +73,8 @@ BOOST_AUTO_TEST_CASE(add_particle_inside_domain) {
   BOOST_CHECK(exists == 1);
 
   if (lb->is_particle_on_this_process(uid)) {
-    BOOST_CHECK(*(lb->get_particle_position(uid)) == gpos);
-    BOOST_CHECK(*(lb->get_particle_velocity(uid)) == linVel);
+    BOOST_CHECK(*(lb->get_particle_position(uid)) == global_pos);
+    BOOST_CHECK(*(lb->get_particle_velocity(uid)) == linear_vel);
     BOOST_CHECK(*(lb->get_particle_force(uid)) == force);
     BOOST_CHECK(*(lb->get_particle_torque(uid)) == torque);
     // TODO: setter for angular vel and orientation
@@ -95,9 +95,9 @@ BOOST_AUTO_TEST_CASE(remove_particle) {
   // Create particle
   std::uint64_t uid = 12;
   double radius = 0.1;
-  Vector3d gpos{0, 0, 0};
-  Vector3d linVel{1.0, 0.2, 0.1};
-  lb->add_pe_particle(uid, gpos, radius, linVel);
+  Vector3d global_pos{0, 0, 0};
+  Vector3d linear_vel{1.0, 0.2, 0.1};
+  lb->add_particle(uid, global_pos, radius, linear_vel);
 
   // Add force/torque
   Vector3d force{0.1, 0.5, 0.22};
@@ -105,7 +105,7 @@ BOOST_AUTO_TEST_CASE(remove_particle) {
   lb->set_particle_force(uid, force);
   lb->set_particle_torque(uid, torque);
 
-  lb->remove_pe_particle(uid);
+  lb->remove_particle(uid);
 
   // Check that particle doesn't exist on any rank
   BOOST_CHECK(lb->is_particle_on_this_process(uid) == false);

@@ -61,27 +61,30 @@ Utils::Quaternion<T> to_quaternion(const math::Quaternion<T> quat) {
 }
 
 struct PE_Parameters {
-  bool useMO = false; // If false the rest is not needed to be changed
-  bool syncShadowOwners = true;
+  bool use_moving_obstacles = false; // If false other parameters are obsolete
+  bool sync_shadow_owners = true;
 
-  // pe_sync_overlap = overlapFactor * dx
+  // pe_sync_overlap = syncronization_overlap_factor * dx
   // Where dx is the LB cell length
-  real_t overlapFactor = real_t(1.5);
+  real_t syncronization_overlap_factor = real_t(1.5);
 
-  bool averageForceTorqueOverTwoTimSteps = true;
-  uint_t numPeSubCycles = 1;
-  std::vector<std::pair<Utils::Vector3d, std::string>> constantGlobalForces =
+  bool average_force_torque_over_two_timesteps = true;
+  uint_t num_pe_sub_cycles = 1;
+  std::vector<std::pair<Utils::Vector3d, std::string>> constant_global_forces =
       {};
 
   PE_Parameters() {}
 
-  PE_Parameters(bool p_useMO, bool p_syncShadowOwners, real_t p_overlapFactor,
-                bool p_averageForceTorqueOverTwoTimSteps,
-                uint_t p_numPeSubCycles)
-      : useMO(p_useMO), syncShadowOwners(p_syncShadowOwners),
-        overlapFactor(p_overlapFactor),
-        averageForceTorqueOverTwoTimSteps(p_averageForceTorqueOverTwoTimSteps),
-        numPeSubCycles(p_numPeSubCycles) {}
+  PE_Parameters(bool _use_moving_obstacles, bool _sync_shadow_owners,
+                real_t _syncronization_overlap_factor,
+                bool _average_force_torque_over_two_timesteps,
+                uint_t _num_pe_sub_cycles)
+      : use_moving_obstacles(_use_moving_obstacles),
+        sync_shadow_owners(_sync_shadow_owners),
+        syncronization_overlap_factor(_syncronization_overlap_factor),
+        average_force_torque_over_two_timesteps(
+            _average_force_torque_over_two_timesteps),
+        num_pe_sub_cycles(_num_pe_sub_cycles) {}
 };
 
 // Helpers to retrieve blocks and cells
