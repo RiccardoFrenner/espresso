@@ -1167,10 +1167,7 @@ public:
   // pe interface functions
   bool is_particle_on_this_process(std::uint64_t uid) const override {
     pe::BodyID p = get_particle(uid);
-    if (p != nullptr) {
-      return true;
-    }
-    return false;
+    return p != nullptr;
   }
   bool add_particle(std::uint64_t uid, Utils::Vector3d const &gpos,
                     double radius, Utils::Vector3d const &linVel,
@@ -1305,7 +1302,8 @@ public:
                        real_c(cdf), real_c(poisson), real_c(young),
                        real_c(stiffness), real_c(dampingN), real_c(dampingT));
   }
-  void create_particle_material(std::string const &name, double density) {
+  void create_particle_material(std::string const &name,
+                                double density) override {
     pe::createMaterial(name, density, real_t(0.5), real_t(0.1), real_t(0.1),
                        real_t(0.24), real_t(200), real_t(200), real_t(0),
                        real_t(0));
