@@ -116,7 +116,7 @@ protected:
   using FlagField = walberla::FlagField<walberla::uint8_t>;
   using PdfField = lbm::PdfField<LatticeModel>;
   using BodyField = GhostLayerField<pe::BodyID, 1>;
-  static const uint_t FieldGhostLayers = 1; // Same value as used in BodyField
+  static uint_t const FieldGhostLayers = 1; // Same value as used in BodyField
   /** Velocity boundary conditions */
   using UBB = lbm::UBB<LatticeModel, uint8_t, true, true>;
   typedef pe_coupling::SimpleBB<LatticeModel, FlagField> MO_BB;
@@ -259,15 +259,15 @@ protected:
   };
   class MOBoundaryHandling {
   public:
-    MOBoundaryHandling(const BlockDataID &flag_field_id,
-                       const BlockDataID &pdf_field_id,
-                       const BlockDataID &body_field_id)
+    MOBoundaryHandling(BlockDataID const &flag_field_id,
+                       BlockDataID const &pdf_field_id,
+                       BlockDataID const &body_field_id)
         : m_flag_field_id(flag_field_id), m_pdf_field_id(pdf_field_id),
           m_body_field_id(body_field_id) {}
 
     MO_Boundaries *
     operator()(IBlock *const block,
-               const StructuredBlockStorage *const storage) const {
+               StructuredBlockStorage const *const storage) const {
       WALBERLA_ASSERT_NOT_NULLPTR(block);
       WALBERLA_ASSERT_NOT_NULLPTR(storage);
 
@@ -277,7 +277,7 @@ protected:
       BodyField *bodyField =
           block->template getData<BodyField>(m_body_field_id);
 
-      const auto fluid = flagField->flagExists(Fluid_flag)
+      auto const fluid = flagField->flagExists(Fluid_flag)
                              ? flagField->getFlag(Fluid_flag)
                              : flagField->registerFlag(Fluid_flag);
 
@@ -296,9 +296,9 @@ protected:
     }
 
   private:
-    const BlockDataID m_flag_field_id;
-    const BlockDataID m_pdf_field_id;
-    const BlockDataID m_body_field_id;
+    BlockDataID const m_flag_field_id;
+    BlockDataID const m_pdf_field_id;
+    BlockDataID const m_body_field_id;
 
   }; // class MOBoundaryHandling
 
@@ -375,7 +375,7 @@ private:
     }
   }
 
-  void init_time_loop(const uint_t timesteps) {
+  void init_time_loop(uint_t const timesteps) {
     // create the timeloop
     m_time_loop =
         make_shared<SweepTimeloop>(m_blocks->getBlockStorage(), timesteps);
@@ -523,10 +523,10 @@ private:
         m_blocks, "flag field", m_n_ghost_layers);
   }
 
-  void init_blockforest(const Utils::Vector3i &n_blocks,
-                        const Utils::Vector3i &n_cells_per_block,
-                        const double lb_cell_size,
-                        const Utils::Vector3i &n_processes) {
+  void init_blockforest(Utils::Vector3i const &n_blocks,
+                        Utils::Vector3i const &n_cells_per_block,
+                        double const lb_cell_size,
+                        Utils::Vector3i const &n_processes) {
 
     const Utils::Vector3d box_dimensions{
         n_blocks[0] * n_cells_per_block[0] * lb_cell_size,
@@ -581,11 +581,11 @@ private:
   }
 
 public:
-  LBWalberlaImpl(const Utils::Vector3i &n_blocks,
-                 const Utils::Vector3i &n_cells_per_block,
-                 const double lb_cell_size, const Utils::Vector3i &n_processes,
+  LBWalberlaImpl(Utils::Vector3i const &n_blocks,
+                 Utils::Vector3i const &n_cells_per_block,
+                 double const lb_cell_size, Utils::Vector3i const &n_processes,
                  int n_ghost_layers,
-                 const PE_Parameters &pe_params = PE_Parameters())
+                 PE_Parameters const &pe_params = PE_Parameters())
       : m_n_ghost_layers(n_ghost_layers), m_pe_parameters(pe_params) {
 
     if (m_n_ghost_layers <= 0)
@@ -600,7 +600,7 @@ public:
     // see
     // https://www.walberla.net/doxygen/group__pe__coupling.html#reconstruction
     // for more information
-    const double lattice_grid_spacing = 1.0; // aka. `Lattice constant` above
+    double const lattice_grid_spacing = 1.0; // aka. `Lattice constant` above
     m_pe_sync_overlap =
         m_pe_parameters.syncronization_overlap_factor * lattice_grid_spacing;
 
@@ -636,7 +636,7 @@ public:
     // see
     // https://www.walberla.net/doxygen/group__pe__coupling.html#reconstruction
     // for more information
-    const double lattice_grid_spacing = 1.0; // aka. `Lattice constant` above
+    double const lattice_grid_spacing = 1.0; // aka. `Lattice constant` above
     m_pe_sync_overlap =
         m_pe_parameters.syncronization_overlap_factor * lattice_grid_spacing;
   };
@@ -1172,9 +1172,9 @@ public:
     }
     return false;
   }
-  bool add_particle(std::uint64_t uid, const Utils::Vector3d &gpos,
-                    double radius, const Utils::Vector3d &linVel,
-                    const std::string &material_name = "iron") override {
+  bool add_particle(std::uint64_t uid, Utils::Vector3d const &gpos,
+                    double radius, Utils::Vector3d const &linVel,
+                    std::string const &material_name = "iron") override {
     if (m_pe_particles.find(uid) != m_pe_particles.end()) {
       return false;
     }
@@ -1260,7 +1260,7 @@ public:
   }
 
   bool set_particle_force(std::uint64_t uid,
-                          const Utils::Vector3d &f) override {
+                          Utils::Vector3d const &f) override {
     pe::BodyID p = get_particle(uid);
     if (p == nullptr)
       return false;
@@ -1269,7 +1269,7 @@ public:
     return true;
   }
   bool add_particle_force(std::uint64_t uid,
-                          const Utils::Vector3d &f) override {
+                          Utils::Vector3d const &f) override {
     pe::BodyID p = get_particle(uid);
     if (p == nullptr)
       return false;
@@ -1278,7 +1278,7 @@ public:
     return true;
   }
   bool set_particle_torque(std::uint64_t uid,
-                           const Utils::Vector3d &tau) override {
+                           Utils::Vector3d const &tau) override {
     pe::BodyID p = get_particle(uid);
     if (p == nullptr)
       return false;
@@ -1287,7 +1287,7 @@ public:
     return true;
   }
   bool add_particle_torque(std::uint64_t uid,
-                           const Utils::Vector3d &tau) override {
+                           Utils::Vector3d const &tau) override {
     pe::BodyID p = get_particle(uid);
     if (p == nullptr)
       return false;
@@ -1296,7 +1296,7 @@ public:
     return true;
   }
 
-  void create_particle_material(const std::string &name, double density,
+  void create_particle_material(std::string const &name, double density,
                                 double cor, double csf, double cdf,
                                 double poisson, double young, double stiffness,
                                 double dampingN, double dampingT) override {
@@ -1305,7 +1305,7 @@ public:
                        real_c(cdf), real_c(poisson), real_c(young),
                        real_c(stiffness), real_c(dampingN), real_c(dampingT));
   }
-  void create_particle_material(const std::string &name, double density) {
+  void create_particle_material(std::string const &name, double density) {
     pe::createMaterial(name, density, real_t(0.5), real_t(0.1), real_t(0.1),
                        real_t(0.24), real_t(200), real_t(200), real_t(0),
                        real_t(0));
