@@ -26,6 +26,7 @@
 #include <boost/optional.hpp>
 
 #include <utils/Vector.hpp>
+#include <utils/quaternion.hpp>
 
 #include <vector>
 
@@ -58,6 +59,30 @@ Utils::Vector3d get_momentum();
 boost::optional<Utils::Vector3d> get_velocity_at_pos(Utils::Vector3d pos);
 
 void add_force_at_pos(Utils::Vector3d pos, Utils::Vector3d f);
+
+namespace PE_Coupling {
+
+bool add_particle(std::uint64_t uid, Utils::Vector3d const &gpos, double radius,
+                  Utils::Vector3d const &linVel,
+                  std::string const &material_name = "iron");
+void remove_particle(std::uint64_t uid);
+boost::optional<Utils::Vector3d> get_particle_velocity(std::uint64_t uid);
+boost::optional<Utils::Vector3d>
+get_particle_angular_velocity(std::uint64_t uid);
+boost::optional<Utils::Quaternion<double>>
+get_particle_orientation(std::uint64_t uid);
+boost::optional<Utils::Vector3d> get_particle_position(std::uint64_t uid);
+boost::optional<Utils::Vector3d> get_particle_force(std::uint64_t uid);
+boost::optional<Utils::Vector3d> get_particle_torque(std::uint64_t uid);
+bool set_particle_force(std::uint64_t uid, Utils::Vector3d const &f);
+bool add_particle_force(std::uint64_t uid, Utils::Vector3d const &f);
+bool set_particle_torque(std::uint64_t uid, Utils::Vector3d const &tau);
+bool add_particle_torque(std::uint64_t uid, Utils::Vector3d const &tau);
+void sync_particles();
+void map_particles_to_lb_grid();
+void finish_particle_adding();
+
+} // namespace PE_Coupling
 
 } // namespace Walberla
 #endif

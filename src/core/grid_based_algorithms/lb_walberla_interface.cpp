@@ -159,5 +159,107 @@ void add_force_at_pos(Utils::Vector3d pos, Utils::Vector3d f) {
 
 REGISTER_CALLBACK(add_force_at_pos)
 
+namespace PE_Coupling {
+
+bool add_particle(std::uint64_t uid, Utils::Vector3d const &gpos, double radius,
+                  Utils::Vector3d const &linVel,
+                  std::string const &material_name = "iron") {
+  auto res =
+      lb_walberla()->add_particle(uid, gpos, radius, linVel, material_name);
+  return res;
+}
+
+REGISTER_CALLBACK_REDUCTION(add_particle, std::logical_or<>())
+
+void remove_particle(std::uint64_t uid) { lb_walberla()->remove_particle(uid); }
+
+REGISTER_CALLBACK(remove_particle)
+
+boost::optional<Utils::Vector3d> get_particle_velocity(std::uint64_t uid) {
+  auto res = lb_walberla()->get_particle_velocity(uid);
+  return res;
+}
+
+REGISTER_CALLBACK_ONE_RANK(get_particle_velocity)
+
+boost::optional<Utils::Vector3d>
+get_particle_angular_velocity(std::uint64_t uid) {
+  auto res = lb_walberla()->get_particle_angular_velocity(uid);
+  return res;
+}
+
+REGISTER_CALLBACK_ONE_RANK(get_particle_angular_velocity)
+
+boost::optional<Utils::Quaternion<double>>
+get_particle_orientation(std::uint64_t uid) {
+  auto res = lb_walberla()->get_particle_orientation(uid);
+  return res;
+}
+
+REGISTER_CALLBACK_ONE_RANK(get_particle_orientation)
+
+boost::optional<Utils::Vector3d> get_particle_position(std::uint64_t uid) {
+  auto res = lb_walberla()->get_particle_position(uid);
+  return res;
+}
+
+REGISTER_CALLBACK_ONE_RANK(get_particle_position)
+
+boost::optional<Utils::Vector3d> get_particle_force(std::uint64_t uid) {
+  auto res = lb_walberla()->get_particle_force(uid);
+  return res;
+}
+
+REGISTER_CALLBACK_ONE_RANK(get_particle_force)
+
+boost::optional<Utils::Vector3d> get_particle_torque(std::uint64_t uid) {
+  auto res = lb_walberla()->get_particle_torque(uid);
+  return res;
+}
+
+REGISTER_CALLBACK_ONE_RANK(get_particle_torque)
+
+bool set_particle_force(std::uint64_t uid, Utils::Vector3d const &f) {
+  auto res = lb_walberla()->set_particle_force(uid, f);
+  return res;
+}
+
+REGISTER_CALLBACK_IGNORE(set_particle_force)
+
+bool add_particle_force(std::uint64_t uid, Utils::Vector3d const &f) {
+  auto res = lb_walberla()->add_particle_force(uid, f);
+  return res;
+}
+
+REGISTER_CALLBACK_IGNORE(add_particle_force)
+
+bool set_particle_torque(std::uint64_t uid, Utils::Vector3d const &tau) {
+  auto res = lb_walberla()->set_particle_torque(uid, tau);
+  return res;
+}
+
+REGISTER_CALLBACK_IGNORE(set_particle_torque)
+
+bool add_particle_torque(std::uint64_t uid, Utils::Vector3d const &tau) {
+  auto res = lb_walberla()->add_particle_torque(uid, tau);
+  return res;
+}
+
+REGISTER_CALLBACK_IGNORE(add_particle_torque)
+
+void sync_particles() { lb_walberla()->sync_particles(); }
+
+REGISTER_CALLBACK(sync_particles)
+
+void map_particles_to_lb_grid() { lb_walberla()->map_particles_to_lb_grid(); }
+
+REGISTER_CALLBACK(map_particles_to_lb_grid)
+
+void finish_particle_adding() { lb_walberla()->finish_particle_adding(); }
+
+REGISTER_CALLBACK(finish_particle_adding)
+
+} // namespace PE_Coupling
+
 } // namespace Walberla
 #endif

@@ -668,3 +668,162 @@ void lb_lbfluid_add_force_at_pos(const Utils::Vector3d &pos,
     throw NoLBActive();
   }
 }
+
+void pe_add_particle(std::uint64_t uid, Utils::Vector3d const &pos,
+                     double radius, Utils::Vector3d const &vel,
+                     std::string const &material_name) {}
+
+void pe_remove_particle(std::uint64_t uid) {}
+
+Utils::Vector3d pe_get_particle_velocity(std::uint64_t uid) {
+#ifdef LB_WALBERLA
+  if (lattice_switch == ActiveLB::WALBERLA) {
+    return ::Communication::mpiCallbacks().call(
+        ::Communication::Result::one_rank,
+        Walberla::PE_Coupling::get_particle_velocity, uid);
+  }
+#endif
+
+  throw NoLBActive();
+}
+
+Utils::Vector3d pe_get_particle_angular_velocity(std::uint64_t uid) {
+#ifdef LB_WALBERLA
+  if (lattice_switch == ActiveLB::WALBERLA) {
+    return ::Communication::mpiCallbacks().call(
+        ::Communication::Result::one_rank,
+        Walberla::PE_Coupling::get_particle_angular_velocity, uid);
+  }
+#endif
+
+  throw NoLBActive();
+}
+
+Utils::Quaternion<double> pe_get_particle_orientation(std::uint64_t uid) {
+#ifdef LB_WALBERLA
+  if (lattice_switch == ActiveLB::WALBERLA) {
+    return ::Communication::mpiCallbacks().call(
+        ::Communication::Result::one_rank,
+        Walberla::PE_Coupling::get_particle_orientation, uid);
+  }
+#endif
+
+  throw NoLBActive();
+}
+
+Utils::Vector3d pe_get_particle_position(std::uint64_t uid) {
+#ifdef LB_WALBERLA
+  if (lattice_switch == ActiveLB::WALBERLA) {
+    return ::Communication::mpiCallbacks().call(
+        ::Communication::Result::one_rank,
+        Walberla::PE_Coupling::get_particle_position, uid);
+  }
+#endif
+
+  throw NoLBActive();
+}
+
+Utils::Vector3d pe_get_particle_force(std::uint64_t uid) {
+#ifdef LB_WALBERLA
+  if (lattice_switch == ActiveLB::WALBERLA) {
+    return ::Communication::mpiCallbacks().call(
+        ::Communication::Result::one_rank,
+        Walberla::PE_Coupling::get_particle_force, uid);
+  }
+#endif
+
+  throw NoLBActive();
+}
+
+Utils::Vector3d pe_get_particle_torque(std::uint64_t uid) {
+#ifdef LB_WALBERLA
+  if (lattice_switch == ActiveLB::WALBERLA) {
+    return ::Communication::mpiCallbacks().call(
+        ::Communication::Result::one_rank,
+        Walberla::PE_Coupling::get_particle_torque, uid);
+  }
+#endif
+
+  throw NoLBActive();
+}
+
+void pe_set_particle_force(std::uint64_t uid, Utils::Vector3d const &f) {
+  if (lattice_switch == ActiveLB::WALBERLA) {
+#ifdef LB_WALBERLA
+    ::Communication::mpiCallbacks().call(
+        ::Communication::Result::ignore,
+        Walberla::PE_Coupling::set_particle_force, uid, f);
+#endif
+  } else {
+    throw NoLBActive();
+  }
+}
+
+void pe_add_particle_force(std::uint64_t uid, Utils::Vector3d const &f) {
+  if (lattice_switch == ActiveLB::WALBERLA) {
+#ifdef LB_WALBERLA
+    ::Communication::mpiCallbacks().call(
+        ::Communication::Result::ignore,
+        Walberla::PE_Coupling::add_particle_force, uid, f);
+#endif
+  } else {
+    throw NoLBActive();
+  }
+}
+
+void pe_set_particle_torque(std::uint64_t uid, Utils::Vector3d const &tau) {
+  if (lattice_switch == ActiveLB::WALBERLA) {
+#ifdef LB_WALBERLA
+    ::Communication::mpiCallbacks().call(
+        ::Communication::Result::ignore,
+        Walberla::PE_Coupling::set_particle_torque, uid, tau);
+#endif
+  } else {
+    throw NoLBActive();
+  }
+}
+
+void pe_add_particle_torque(std::uint64_t uid, Utils::Vector3d const &tau) {
+  if (lattice_switch == ActiveLB::WALBERLA) {
+#ifdef LB_WALBERLA
+    ::Communication::mpiCallbacks().call(
+        ::Communication::Result::ignore,
+        Walberla::PE_Coupling::add_particle_torque, uid, tau);
+#endif
+  } else {
+    throw NoLBActive();
+  }
+}
+
+void pe_sync_particles() {
+  if (lattice_switch == ActiveLB::WALBERLA) {
+#ifdef LB_WALBERLA
+    ::Communication::mpiCallbacks().call_all(
+        Walberla::PE_Coupling::sync_particles);
+#endif
+  } else {
+    throw NoLBActive();
+  }
+}
+
+void pe_map_particles_to_lb_grid() {
+  if (lattice_switch == ActiveLB::WALBERLA) {
+#ifdef LB_WALBERLA
+    ::Communication::mpiCallbacks().call_all(
+        Walberla::PE_Coupling::map_particles_to_lb_grid);
+#endif
+  } else {
+    throw NoLBActive();
+  }
+}
+
+void pe_finish_particle_adding() {
+  if (lattice_switch == ActiveLB::WALBERLA) {
+#ifdef LB_WALBERLA
+    ::Communication::mpiCallbacks().call_all(
+        Walberla::PE_Coupling::finish_particle_adding);
+#endif
+  } else {
+    throw NoLBActive();
+  }
+}

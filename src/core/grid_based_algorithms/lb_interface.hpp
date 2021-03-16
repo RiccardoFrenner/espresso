@@ -22,6 +22,7 @@
 #include "config.hpp"
 
 #include <utils/Vector.hpp>
+#include <utils/quaternion.hpp>
 
 #include <cstdint>
 #include <string>
@@ -230,5 +231,108 @@ lb_lbfluid_get_interpolated_velocity(const Utils::Vector3d &pos);
  */
 void lb_lbfluid_add_force_at_pos(const Utils::Vector3d &pos,
                                  const Utils::Vector3d &f);
+
+/**
+ * @brief Adds a sphere particle at the given position.
+ * @param uid               User id to uniquely identify the particle.
+ *        pos               Position at which the particle should be.
+ *        radius            Radius of the particle.
+ *        vel               Linear velocity of the particle.
+ *        material_name     Name of the particle's material.
+ */
+void pe_add_particle(std::uint64_t uid, Utils::Vector3d const &pos,
+                     double radius, Utils::Vector3d const &vel,
+                     std::string const &material_name = "iron");
+
+/**
+ * @brief Removes the specified particle.
+ * @param uid User id to uniquely identify the particle.
+ */
+void pe_remove_particle(std::uint64_t uid);
+
+/**
+ * @brief Gets the velocity of the specified particle.
+ * @param uid User id to uniquely identify the particle.
+ */
+Utils::Vector3d pe_get_particle_velocity(std::uint64_t uid);
+
+/**
+ * @brief Gets the angular velocity of the specified particle.
+ * @param uid User id to uniquely identify the particle.
+ */
+Utils::Vector3d pe_get_particle_angular_velocity(std::uint64_t uid);
+
+/**
+ * @brief Gets the orientation of the specified particle.
+ * @param uid User id to uniquely identify the particle.
+ */
+Utils::Quaternion<double> pe_get_particle_orientation(std::uint64_t uid);
+
+/**
+ * @brief Gets the position of the specified particle.
+ * @param uid User id to uniquely identify the particle.
+ */
+Utils::Vector3d pe_get_particle_position(std::uint64_t uid);
+
+/**
+ * @brief Gets the force of the specified particle.
+ * @param uid User id to uniquely identify the particle.
+ */
+Utils::Vector3d pe_get_particle_force(std::uint64_t uid);
+
+/**
+ * @brief Gets the torque of the specified particle.
+ * @param uid User id to uniquely identify the particle.
+ */
+Utils::Vector3d pe_get_particle_torque(std::uint64_t uid);
+
+/**
+ * @brief Sets the force of the specified particle.
+ * @param uid User id to uniquely identify the particle.
+ * @param f   The force.
+ */
+void pe_set_particle_force(std::uint64_t uid, Utils::Vector3d const &f);
+
+/**
+ * @brief Adds a force to the specified particle.
+ * @param uid User id to uniquely identify the particle.
+ * @param f   The force.
+ */
+void pe_add_particle_force(std::uint64_t uid, Utils::Vector3d const &f);
+
+/**
+ * @brief Sets the torque of the specified particle.
+ * @param uid User id to uniquely identify the particle.
+ * @param tau The torque.
+ */
+void pe_set_particle_torque(std::uint64_t uid, Utils::Vector3d const &tau);
+
+/**
+ * @brief Adds a torque to the specified particle.
+ * @param uid User id to uniquely identify the particle.
+ * @param tau The torque.
+ */
+void pe_add_particle_torque(std::uint64_t uid, Utils::Vector3d const &tau);
+
+/**
+ * @brief Keeps all particles that are known to more than one process in sync.
+ *        Needs to be called once after all particles have been added.
+ */
+void pe_sync_particles();
+
+/**
+ * @brief Maps the particles into the fluid domain.
+ *        Needs to be called once after all particles have been added.
+ */
+void pe_map_particles_to_lb_grid();
+
+/**
+ * @brief Maps the particles into the fluid domain and keeps all particles
+ *        that are known to more than one process in sync.
+ *        Needs to be called once after all particles have been added.
+ *        Can be used instead of `pe_sync_particles` and
+ *        `pe_map_particles_to_lb_grid`.
+ */
+void pe_finish_particle_adding();
 
 #endif

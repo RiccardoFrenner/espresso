@@ -28,7 +28,7 @@ from . cimport cuda_init
 from . import cuda_init
 from . import utils
 from .utils import array_locked, is_valid_type, to_char_pointer
-from .utils cimport Vector3i, Vector3d, Vector6d, make_array_locked, create_nparray_from_double_array
+from .utils cimport Vector3i, Vector3d, Vector6d, make_array_locked, create_nparray_from_double_array, Quaternion
 from .globals cimport time_step
 
 
@@ -309,6 +309,192 @@ cdef class HydrodynamicInteraction(Actor):
             f[i] = force[i]
         lb_lbfluid_add_force_at_pos(p, f)
 
+    def add_particle(self, uid, pos, radius, vel, material_name="iron"):
+        """Adds a sphere particle at the given position
+
+        Parameters
+        ----------
+        uid : :obj:`int`
+            User id to uniquely identify the particle.
+        pos : (3,) array_like of :obj:`float`
+            Position at which the particle should be.
+        radius : :obj:`float`
+            Radius of the particle.
+        vel : (3,) array_like of :obj:`float`
+            Linear velocity of the particle.
+        material_name : :obj:`str`
+            Name of the particle's material.
+        """
+        cdef Vector3d _pos
+        cdef Vector3d _vel
+
+        for i in range(3):
+            _pos[i] = pos[i]
+            _vel[i] = vel[i]
+
+        pe_add_particle(uid, _pos, radius, _vel, material_name)
+
+    def remove_particle(self, uid):
+        """Removes the specified particle
+
+        Parameters
+        ----------
+        uid : :obj:`int`
+            User id to uniquely identify the particle.
+        """
+        pe_remove_particle(uid)
+
+    def get_particle_velocity(self, uid):
+        """Gets the velocity of the specified particle
+
+        Parameters
+        ----------
+        uid : :obj:`int`
+            User id to uniquely identify the particle.
+        """
+        return make_array_locked(pe_get_particle_velocity(uid))
+
+    def get_particle_angular_velocity(self, uid):
+        """Gets the angular velocity of the specified particle
+
+        Parameters
+        ----------
+        uid : :obj:`int`
+            User id to uniquely identify the particle.
+        """
+        return make_array_locked(pe_get_particle_angular_velocity(uid))
+
+    def get_particle_orientation(self, uid):
+        """Gets the orientation of the specified particle
+
+        Parameters
+        ----------
+        uid : :obj:`int`
+            User id to uniquely identify the particle.
+        """
+        cdef Quaternion[double] q = pe_get_particle_orientation(uid)
+
+        return np.array([q[0], q[1], q[2], q[3]])
+
+    def get_particle_position(self, uid):
+        """Gets the position of the specified particle
+
+        Parameters
+        ----------
+        uid : :obj:`int`
+            User id to uniquely identify the particle.
+        """
+        return make_array_locked(pe_get_particle_position(uid))
+
+    def get_particle_force(self, uid):
+        """Gets the force of the specified particle
+
+        Parameters
+        ----------
+        uid : :obj:`int`
+            User id to uniquely identify the particle.
+        """
+        return make_array_locked(pe_get_particle_force(uid))
+
+    def get_particle_torque(self, uid):
+        """Gets the torque of the specified particle
+
+        Parameters
+        ----------
+        uid : :obj:`int`
+            User id to uniquely identify the particle.
+        """
+        return make_array_locked(pe_get_particle_torque(uid))
+
+    def set_particle_force(self, uid, f):
+        """Sets the force on the specified particle
+
+        Parameters
+        ----------
+        uid : :obj:`int`
+            User id to uniquely identify the particle.
+        f : (3,) array_like of :obj:`float`
+            The force vector acting on the particle.
+        """
+        cdef Vector3d _f
+
+        for i in range(3):
+            _f[i] = f[i]
+
+        pe_set_particle_force(uid, _f)
+
+    def add_particle_force(self, uid, f):
+        """Adds a force on the specified particle
+
+        Parameters
+        ----------
+        uid : :obj:`int`
+            User id to uniquely identify the particle.
+        f : (3,) array_like of :obj:`float`
+            The force vector that is added to the particle.
+        """
+        cdef Vector3d _f
+
+        for i in range(3):
+            _f[i] = f[i]
+
+        pe_add_particle_force(uid, _f)
+
+    def set_particle_torque(self, uid, tau):
+        """Sets the torque on the specified particle
+
+        Parameters
+        ----------
+        uid : :obj:`int`
+            User id to uniquely identify the particle.
+        tau : (3,) array_like of :obj:`float`
+            The torque vector acting on the particle.
+        """
+        cdef Vector3d _tau
+
+        for i in range(3):
+            _tau[i] = tau[i]
+
+        pe_set_particle_torque(uid, _tau)
+
+    def add_particle_torque(self, uid, tau):
+        """Adds a force on the specified particle
+
+        Parameters
+        ----------
+        uid : :obj:`int`
+            User id to uniquely identify the particle.
+        f : (3,) array_like of :obj:`float`
+            The torque vector that is added to the particle.
+        """
+        cdef Vector3d _tau
+
+        for i in range(3):
+            _tau[i] = tau[i]
+
+        pe_add_particle_torque(uid, _tau)
+
+    def sync_particles(self):
+        """Keeps all particles that are known to more than one process in sync.
+           Needs to be called once after all particles have been added.
+        """
+        pe_sync_particles()
+
+    def map_particles_to_lb_grid(self):
+        """Maps the particles into the fluid domain.
+           Needs to be called once after all particles have been added.
+        """
+        pe_map_particles_to_lb_grid()
+
+    def finish_particle_adding(self):
+        """Maps the particles into the fluid domain and keeps all particles
+           that are known to more than one process in sync.
+           Needs to be called once after all particles have been added.
+           Can be used instead of `sync_particles` and
+           `map_particles_to_lb_grid`.
+        """
+        pe_finish_particle_adding()
+
     def save_checkpoint(self, path, binary):
         tmp_path = path + ".__tmp__"
         lb_lbfluid_save_checkpoint(utils.to_char_pointer(tmp_path), binary)
@@ -415,7 +601,7 @@ IF LB_WALBERLA:
                 self._params['tau'] / self._params['agrid']**2
             lb_dens = self._params['dens'] * self._params['agrid']**3
             lb_kT = self._params['kT'] * \
-                self._params['tau']**2 / self._params['agrid']**2 
+                self._params['tau']**2 / self._params['agrid']**2
             mpi_init_lb_walberla(
                 lb_visc, lb_dens, self._params["agrid"], self._params["tau"],
                 lb_kT, self._params['seed'])

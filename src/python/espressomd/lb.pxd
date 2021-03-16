@@ -27,6 +27,7 @@ from .actors cimport Actor
 from .utils cimport Vector3d
 from .utils cimport Vector3i
 from .utils cimport Vector6d
+from .utils cimport Quaternion
 
 cdef class HydrodynamicInteraction(Actor):
     pass
@@ -92,6 +93,22 @@ cdef extern from "grid_based_algorithms/lb_interface.hpp":
     void check_tau_time_step_consistency(double tau, double time_s) except +
     const Vector3d lb_lbfluid_get_interpolated_velocity(Vector3d & p) except +
     const Vector3d lb_lbfluid_add_force_at_pos(Vector3d & p, Vector3d & f) except +
+
+    void pe_add_particle(stdint.uint64_t uid, const Vector3d & pos, double radius, const Vector3d & vel, const string & material_name) except +
+    void pe_remove_particle(stdint.uint64_t uid) except +
+    Vector3d pe_get_particle_velocity(stdint.uint64_t uid) except +
+    Vector3d pe_get_particle_angular_velocity(stdint.uint64_t uid) except +
+    Quaternion[double] pe_get_particle_orientation(stdint.uint64_t uid) except +
+    Vector3d pe_get_particle_position(stdint.uint64_t uid) except +
+    Vector3d pe_get_particle_force(stdint.uint64_t uid) except +
+    Vector3d pe_get_particle_torque(stdint.uint64_t uid) except +
+    void pe_set_particle_force(stdint.uint64_t uid, const Vector3d & f) except +
+    void pe_add_particle_force(stdint.uint64_t uid, const Vector3d & f) except +
+    void pe_set_particle_torque(stdint.uint64_t uid, const Vector3d & tau) except +
+    void pe_add_particle_torque(stdint.uint64_t uid, const Vector3d & tau) except +
+    void pe_sync_particles() except +
+    void pe_map_particles_to_lb_grid() except +
+    void pe_finish_particle_adding() except +
 
 cdef extern from "grid_based_algorithms/lb_particle_coupling.hpp":
     void lb_lbcoupling_set_rng_state(stdint.uint64_t) except +
@@ -187,10 +204,10 @@ cdef inline Vector6d python_lbnode_get_pressure_tensor(Vector3i node) except +:
     cdef Vector6d c_tensor = lb_lbnode_get_pressure_tensor(node)
     return c_tensor * unit_conversion
 
-cdef inline double python_lbnode_get_density(Vector3i node) except +: 
+cdef inline double python_lbnode_get_density(Vector3i node) except +:
     cdef double agrid = lb_lbfluid_get_agrid()
     cdef double c_density = lb_lbnode_get_density(node)
-    return c_density / agrid / agrid / agrid 
+    return c_density / agrid / agrid / agrid
 
 cdef inline void python_lbnode_set_density(Vector3i node, double density) except +:
     cdef double agrid = lb_lbfluid_get_agrid()
