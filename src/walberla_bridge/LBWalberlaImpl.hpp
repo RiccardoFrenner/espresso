@@ -376,56 +376,54 @@ private:
   }
 
   void init_time_loop(uint_t const timesteps) {
+    // The following briefly describes the steps of the timeloop.
+    // Expressions in brackets only appear when using moving obstacles.
+    // - Reset force fields
+    // - Boundary sweep
+    // - LBM stream and collide
+    // - (Force averaging)
+    // - (Apply forces on bodies)
+    // - (PE time step)
+    // - (Update body mapping)
+    // - (Restore pdf)
+    // - LBM (pdf) communication
+
     // create the timeloop
     m_time_loop =
         make_shared<SweepTimeloop>(m_blocks->getBlockStorage(), timesteps);
 
     if (using_moving_obstacles()) {
-      // sweep for updating the pe body mapping into the LBM simulation
-      m_time_loop->add() << timeloop::Sweep(
-          pe_coupling::BodyMapping<LatticeModel, MO_Boundaries>(
-              m_blocks, m_pdf_field_id, m_boundary_handling_id,
-              m_body_storage_id, m_global_body_storage, m_body_field_id,
-              MO_BB_Flag, FormerMO_Flag, pe_coupling::selectRegularBodies),
-          "Body Mapping");
 
-      // sweep for restoring PDFs in cells previously occupied by pe bodies
-      m_time_loop->add() << timeloop::Sweep(
-          pe_coupling::PDFReconstruction<LatticeModel, MO_Boundaries,
-                                         Reconstructor>(
-              m_blocks, m_pdf_field_id, m_boundary_handling_id,
-              m_body_storage_id, m_global_body_storage, m_body_field_id,
-              *m_reconstructor, FormerMO_Flag, Fluid_flag),
-          "PDF Restore");
-
-      // add LBM communication function and boundary handling sweep (does the
-      // hydro force calculations and the no-slip treatment)
-      m_time_loop->add() << timeloop::BeforeFunction(*m_communication,
-                                                     "LBM Communication")
-                         << timeloop::Sweep(MO_Boundaries::getBlockSweep(
-                                                m_boundary_handling_id),
-                                            "MO Boundary Handling");
-
+      // Add boundary handling sweep (does the hydro force calculations and the
+      // no-slip treatment)
       m_time_loop->add() << timeloop::Sweep(makeSharedSweep(m_reset_force),
                                             "Reset force fields");
+
+      m_time_loop->add() << timeloop::Sweep(
+          MO_Boundaries::getBlockSweep(m_boundary_handling_id),
+          "MO Boundary Handling");
+
     } else {
       m_time_loop->add() << timeloop::Sweep(makeSharedSweep(m_reset_force),
                                             "Reset force fields");
 
       // add LBM communication function and boundary handling sweep (does only
       // the no-slip treatment)
-      m_time_loop->add()
-          << timeloop::BeforeFunction(*m_communication, "LBM Communication")
-          << timeloop::Sweep(Boundaries::getBlockSweep(m_boundary_handling_id),
-                             "Simple Boundary Handling");
+      m_time_loop->add() << timeloop::Sweep(
+          Boundaries::getBlockSweep(m_boundary_handling_id),
+          "Simple Boundary Handling");
     }
 
-    // TODO: In SettlingSphere the communication function is added as an
-    // BeforeFunction, does that matter?
-    m_time_loop->add() << timeloop::Sweep(
-        typename LatticeModel::Sweep(m_pdf_field_id), "LB stream & collide");
-    //  << timeloop::AfterFunction(*m_communication,
-    //                             "communication");
+    if (using_moving_obstacles()) {
+      m_time_loop->add() << timeloop::Sweep(
+          typename LatticeModel::Sweep(m_pdf_field_id), "LB stream & collide");
+    } else {
+      m_time_loop->add() << timeloop::Sweep(
+                                typename LatticeModel::Sweep(m_pdf_field_id),
+                                "LB stream & collide")
+                         << timeloop::AfterFunction(*m_communication,
+                                                    "communication");
+    }
 
     if (using_moving_obstacles()) {
       // Averaging the force/torque over two time steps is said to damp
@@ -470,6 +468,25 @@ private:
                                 m_pe_sync_call, real_t(1),
                                 m_pe_parameters.num_pe_sub_cycles),
           "pe Time Step");
+
+      // sweep for updating the pe body mapping into the LBM simulation
+      m_time_loop->add() << timeloop::Sweep(
+          pe_coupling::BodyMapping<LatticeModel, MO_Boundaries>(
+              m_blocks, m_pdf_field_id, m_boundary_handling_id,
+              m_body_storage_id, m_global_body_storage, m_body_field_id,
+              MO_BB_Flag, FormerMO_Flag, pe_coupling::selectRegularBodies),
+          "Body Mapping");
+
+      // sweep for restoring PDFs in cells previously occupied by pe bodies
+      m_time_loop->add()
+          << timeloop::Sweep(
+                 pe_coupling::PDFReconstruction<LatticeModel, MO_Boundaries,
+                                                Reconstructor>(
+                     m_blocks, m_pdf_field_id, m_boundary_handling_id,
+                     m_body_storage_id, m_global_body_storage, m_body_field_id,
+                     *m_reconstructor, FormerMO_Flag, Fluid_flag),
+                 "PDF Restore")
+          << timeloop::AfterFunction(*m_communication, "communication");
     }
   }
 
