@@ -25,14 +25,15 @@
 #include "VirtualSites.hpp"
 #include "config.hpp"
 #include "core/virtual_sites/VirtualSitesWalberlaMovingBoundary.hpp"
-#ifdef VIRTUAL_SITES_INERTIALESS_TRACERS
+#if defined(VIRTUAL_SITES) && defined(LB_WALBERLA)
 
 namespace ScriptInterface {
 namespace VirtualSites {
 
 class VirtualSitesWalberlaMovingBoundary : public VirtualSites {
 public:
-  VirtualSitesWalberlaMovingBoundary() : m_virtual_sites(new ::VirtualSitesWalberlaMovingBoundary()){};
+  VirtualSitesWalberlaMovingBoundary()
+      : m_virtual_sites(new ::VirtualSitesWalberlaMovingBoundary()){};
   /** Vs implementation we are wrapping */
   std::shared_ptr<::VirtualSites> virtual_sites() override {
     return m_virtual_sites;
