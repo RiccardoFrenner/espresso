@@ -78,6 +78,7 @@
 #include "ResetForce.hpp"
 #include "walberla_utils.hpp"
 
+#include <cassert>
 #include <utils/Vector.hpp>
 #include <utils/interpolation/bspline_3d.hpp>
 #include <utils/math/make_lin_space.hpp>
@@ -287,9 +288,6 @@ protected:
           MO_BB("MO", MO_BB_Flag, pdfField, flagField, bodyField, fluid,
                 *storage, *block));
 
-      // boundary conditions (no-slip) are set by mapping the planes into the
-      // domain
-
       handling->fillWithDomain(FieldGhostLayers);
 
       return handling;
@@ -329,11 +327,8 @@ private:
 
   void init_pe_fields() {
     // add body field
-    m_body_field_id = field::addToStorage<BodyField>(
-        m_blocks, "body field", nullptr, field::zyxf/*,
-        m_n_ghost_layers*/); // TODO: Should it have a ghost
-                               // layer? If so, is
-                               // m_n_ghost_layers correct?
+    m_body_field_id = field::addToStorage<BodyField>(m_blocks, "body field",
+                                                     nullptr, field::zyxf);
   }
 
   void init_body_synchronization() {
@@ -352,10 +347,8 @@ private:
 
   void init_boundary_handling() {
     if (using_moving_obstacles()) {
+      assert(is_pe_initialized());
       // add MO boundary handling
-      if (!is_pe_initialized()) {
-        throw std::runtime_error("PE is not initialized");
-      }
       m_boundary_handling_id = m_blocks->addStructuredBlockData<MO_Boundaries>(
           MOBoundaryHandling(m_flag_field_id, m_pdf_field_id, m_body_field_id),
           "MO boundary handling");
@@ -387,6 +380,8 @@ private:
     // - (Update body mapping)
     // - (Restore pdf)
     // - LBM (pdf) communication
+    // Communication needs to happen at the end, because espresso relies on the
+    // values beeing up to date also on the ghost layers (I think).
 
     // create the timeloop
     m_time_loop =
@@ -462,7 +457,7 @@ private:
                                             to_vector3(t.first)),
             t.second);
       }
-      // add pe timesteps
+      // integrates particles and resets forces and torques afterwards
       m_time_loop->addFuncAfterTimeStep(
           pe_coupling::TimeStep(m_blocks, m_body_storage_id, *m_cr,
                                 m_pe_sync_call, real_t(1),
