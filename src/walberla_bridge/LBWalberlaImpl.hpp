@@ -381,44 +381,28 @@ private:
     // - (Restore pdf)
     // - LBM (pdf) communication
     // Communication needs to happen at the end, because espresso relies on the
-    // values beeing up to date also on the ghost layers (I think).
+    // values beeing up to date also on the ghost layers.
 
     // create the timeloop
     m_time_loop =
         make_shared<SweepTimeloop>(m_blocks->getBlockStorage(), timesteps);
 
+    m_time_loop->add() << timeloop::Sweep(makeSharedSweep(m_reset_force),
+                                          "Reset force fields");
+
+    // add boundary handling sweep
     if (using_moving_obstacles()) {
-
-      // Add boundary handling sweep (does the hydro force calculations and the
-      // no-slip treatment)
-      m_time_loop->add() << timeloop::Sweep(makeSharedSweep(m_reset_force),
-                                            "Reset force fields");
-
       m_time_loop->add() << timeloop::Sweep(
           MO_Boundaries::getBlockSweep(m_boundary_handling_id),
           "MO Boundary Handling");
-
     } else {
-      m_time_loop->add() << timeloop::Sweep(makeSharedSweep(m_reset_force),
-                                            "Reset force fields");
-
-      // add LBM communication function and boundary handling sweep (does only
-      // the no-slip treatment)
       m_time_loop->add() << timeloop::Sweep(
           Boundaries::getBlockSweep(m_boundary_handling_id),
           "Simple Boundary Handling");
     }
 
-    if (using_moving_obstacles()) {
-      m_time_loop->add() << timeloop::Sweep(
-          typename LatticeModel::Sweep(m_pdf_field_id), "LB stream & collide");
-    } else {
-      m_time_loop->add() << timeloop::Sweep(
-                                typename LatticeModel::Sweep(m_pdf_field_id),
-                                "LB stream & collide")
-                         << timeloop::AfterFunction(*m_communication,
-                                                    "communication");
-    }
+    m_time_loop->add() << timeloop::Sweep(
+        typename LatticeModel::Sweep(m_pdf_field_id), "LB stream & collide");
 
     if (using_moving_obstacles()) {
       // Averaging the force/torque over two time steps is said to damp
@@ -473,16 +457,16 @@ private:
           "Body Mapping");
 
       // sweep for restoring PDFs in cells previously occupied by pe bodies
-      m_time_loop->add()
-          << timeloop::Sweep(
-                 pe_coupling::PDFReconstruction<LatticeModel, MO_Boundaries,
-                                                Reconstructor>(
-                     m_blocks, m_pdf_field_id, m_boundary_handling_id,
-                     m_body_storage_id, m_global_body_storage, m_body_field_id,
-                     *m_reconstructor, FormerMO_Flag, Fluid_flag),
-                 "PDF Restore")
-          << timeloop::AfterFunction(*m_communication, "communication");
+      m_time_loop->add() << timeloop::Sweep(
+          pe_coupling::PDFReconstruction<LatticeModel, MO_Boundaries,
+                                         Reconstructor>(
+              m_blocks, m_pdf_field_id, m_boundary_handling_id,
+              m_body_storage_id, m_global_body_storage, m_body_field_id,
+              *m_reconstructor, FormerMO_Flag, Fluid_flag),
+          "PDF Restore");
     }
+
+    m_time_loop->addFuncAfterTimeStep(*m_communication, "communication");
   }
 
   void init_pe() {
