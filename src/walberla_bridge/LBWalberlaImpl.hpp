@@ -75,6 +75,7 @@
 #include "timeloop/SweepTimeloop.h"
 
 #include "LBWalberlaBase.hpp"
+#include "PE_Parameters.hpp"
 #include "ResetForce.hpp"
 #include "walberla_utils.hpp"
 
@@ -556,9 +557,9 @@ public:
   LBWalberlaImpl(Utils::Vector3i const &n_blocks,
                  Utils::Vector3i const &n_cells_per_block,
                  double const lb_cell_size, Utils::Vector3i const &n_processes,
-                 int n_ghost_layers,
-                 PE_Parameters pe_params = PE_Parameters())
-      : m_n_ghost_layers(n_ghost_layers), m_pe_parameters(std::move(pe_params)) {
+                 int n_ghost_layers, PE_Parameters pe_params = PE_Parameters())
+      : m_n_ghost_layers(n_ghost_layers),
+        m_pe_parameters(std::move(pe_params)) {
 
     if (m_n_ghost_layers <= 0)
       throw std::runtime_error("At least one ghost layer must be used");
@@ -586,7 +587,8 @@ public:
                  const Utils::Vector3d &box_dimensions,
                  const Utils::Vector3i &node_grid, int n_ghost_layers,
                  PE_Parameters pe_params = PE_Parameters())
-      : m_n_ghost_layers(n_ghost_layers), m_pe_parameters(std::move(pe_params)) {
+      : m_n_ghost_layers(n_ghost_layers),
+        m_pe_parameters(std::move(pe_params)) {
 
     Utils::Vector3i m_grid_dimensions{
         int(std::round(box_dimensions[0] / agrid)),
