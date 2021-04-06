@@ -79,6 +79,7 @@
 #include "walberla_utils.hpp"
 
 #include <cassert>
+#include <utility>
 #include <utils/Vector.hpp>
 #include <utils/interpolation/bspline_3d.hpp>
 #include <utils/math/make_lin_space.hpp>
@@ -524,37 +525,12 @@ private:
                         double const lb_cell_size,
                         Utils::Vector3i const &n_processes) {
 
-    const Utils::Vector3d box_dimensions{
-        n_blocks[0] * n_cells_per_block[0] * lb_cell_size,
-        n_blocks[1] * n_cells_per_block[1] * lb_cell_size,
-        n_blocks[2] * n_cells_per_block[2] * lb_cell_size};
-    const Utils::Vector3i node_grid(n_processes);
-    const double agrid = lb_cell_size;
-
-    for (int i = 0; i < 3; i++) {
-      if (fabs(round(box_dimensions[i] / agrid) * agrid - box_dimensions[i]) /
-              box_dimensions[i] >
-          std::numeric_limits<double>::epsilon()) {
-        throw std::runtime_error(
-            "Box length not commensurate with agrid in direction " +
-            std::to_string(i));
-      }
-      m_grid_dimensions[i] = int(std::round(box_dimensions[i] / agrid));
-      if (m_grid_dimensions[i] % node_grid[i] != 0) {
-        printf("Grid dimension: %d, node grid %d\n", m_grid_dimensions[i],
-               node_grid[i]);
-        throw std::runtime_error(
-            "LB grid dimensions and mpi node grid are not compatible.");
-      }
-    }
-
-    // Attention
-    // If you run a simulation with periodic boundaries you need at least three
-    // blocks in each direction of periodicity!
+    // Running a simulation with periodic boundaries needs at least three
+    // blocks in each direction of periodicity
     Vector3<bool> periodicity(true, true, true);
     for (int i = 0; i < 3; i++) {
       if (periodicity[i] && n_blocks[i] < 3) {
-        // TODO: Makes a lot of errors in LBWalberla_test
+        // TODO: Produces a lot of errors in LBWalberla_test
         // throw std::runtime_error("Direction " + std::to_string(i) +
         //                          " needs at least three blocks but only " +
         //                          std::to_string(n_blocks[i]) + " where
@@ -581,8 +557,8 @@ public:
                  Utils::Vector3i const &n_cells_per_block,
                  double const lb_cell_size, Utils::Vector3i const &n_processes,
                  int n_ghost_layers,
-                 PE_Parameters const &pe_params = PE_Parameters())
-      : m_n_ghost_layers(n_ghost_layers), m_pe_parameters(pe_params) {
+                 PE_Parameters pe_params = PE_Parameters())
+      : m_n_ghost_layers(n_ghost_layers), m_pe_parameters(std::move(pe_params)) {
 
     if (m_n_ghost_layers <= 0)
       throw std::runtime_error("At least one ghost layer must be used");
@@ -609,8 +585,8 @@ public:
   LBWalberlaImpl(double viscosity, double agrid, double tau,
                  const Utils::Vector3d &box_dimensions,
                  const Utils::Vector3i &node_grid, int n_ghost_layers,
-                 const PE_Parameters &pe_params = PE_Parameters())
-      : m_n_ghost_layers(n_ghost_layers), m_pe_parameters(pe_params) {
+                 PE_Parameters pe_params = PE_Parameters())
+      : m_n_ghost_layers(n_ghost_layers), m_pe_parameters(std::move(pe_params)) {
 
     Utils::Vector3i m_grid_dimensions{
         int(std::round(box_dimensions[0] / agrid)),
@@ -622,6 +598,23 @@ public:
 
     if (m_n_ghost_layers <= 0)
       throw std::runtime_error("At least one ghost layer must be used");
+
+    for (int i = 0; i < 3; i++) {
+      if (fabs(round(box_dimensions[i] / agrid) * agrid - box_dimensions[i]) /
+              box_dimensions[i] >
+          std::numeric_limits<double>::epsilon()) {
+        throw std::runtime_error(
+            "Box length not commensurate with agrid in direction " +
+            std::to_string(i));
+      }
+      m_grid_dimensions[i] = int(std::round(box_dimensions[i] / agrid));
+      if (m_grid_dimensions[i] % node_grid[i] != 0) {
+        printf("Grid dimension: %d, node grid %d\n", m_grid_dimensions[i],
+               node_grid[i]);
+        throw std::runtime_error(
+            "LB grid dimensions and mpi node grid are not compatible.");
+      }
+    }
 
     init_blockforest(node_grid, n_cells_per_block, agrid, node_grid);
 
