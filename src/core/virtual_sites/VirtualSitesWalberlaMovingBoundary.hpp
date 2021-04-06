@@ -16,14 +16,14 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef VIRTUAL_SITES_VIRTUAL_SITES_PE_TRACERS_HPP
-#define VIRTUAL_SITES_VIRTUAL_SITES_PE_TRACERS_HPP
+#ifndef VIRTUAL_SITES_VIRTUAL_SITES_WALBERLA_MOVING_BOUNDARY_HPP
+#define VIRTUAL_SITES_VIRTUAL_SITES_WALBERLA_MOVING_BOUNDARY_HPP
 
 #include "config.hpp"
 #ifdef VIRTUAL_SITES
 #include "VirtualSites.hpp"
 
-#ifdef VIRTUAL_SITES_INERTIALESS_TRACERS
+#if defined(VIRTUAL_SITES) && defined(LB_WALBERLA)
 /** @brief Virtual sites acting as "shadows" for the particles in Walberla's
  *         physics engine (PE).
  */

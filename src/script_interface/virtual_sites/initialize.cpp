@@ -23,8 +23,8 @@
 #include "ActiveVirtualSitesHandle.hpp"
 #include "VirtualSitesInertialessTracers.hpp"
 #include "VirtualSitesOff.hpp"
-#include "VirtualSitesWalberlaMovingBoundary.hpp"
 #include "VirtualSitesRelative.hpp"
+#include "VirtualSitesWalberlaMovingBoundary.hpp"
 
 namespace ScriptInterface {
 namespace VirtualSites {
@@ -35,6 +35,8 @@ void initialize(Utils::Factory<ObjectHandle> *om) {
 #ifdef VIRTUAL_SITES_INERTIALESS_TRACERS
   om->register_new<VirtualSitesInertialessTracers>(
       "VirtualSites::VirtualSitesInertialessTracers");
+#endif
+#ifdef LB_WALBERLA
   om->register_new<VirtualSitesWalberlaMovingBoundary>(
       "VirtualSites::VirtualSitesWalberlaMovingBoundary");
 #endif
