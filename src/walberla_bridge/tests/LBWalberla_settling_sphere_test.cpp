@@ -194,11 +194,11 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
   double agrid = dx_SI;
   const int n_ghost_layers = 1;
 
-  walberla::PE_Parameters pe_params(true, sync_shadow_owners, overlap / dx,
-                                    average_force_torque_over_two_timesteps,
-                                    num_pe_sub_cycles);
-  pe_params.constant_global_forces.push_back(
-      {gravitational_force, "Gravitational Force"});
+  PE_Parameters pe_params(true, sync_shadow_owners, overlap / dx,
+                          average_force_torque_over_two_timesteps,
+                          num_pe_sub_cycles);
+  pe_params.constant_global_forces.emplace_back(
+      std::make_pair(gravitational_force, "Gravitational Force"));
 
   auto lb = std::make_shared<LBWalberlaD3Q19MRT>(
       viscosity, density_fluid, tau, n_blocks_per_direction,

@@ -128,6 +128,11 @@ cdef extern from "grid_based_algorithms/lb_interpolation.hpp" namespace "Interpo
 
 IF LB_WALBERLA:
     cdef extern from "grid_based_algorithms/lb_walberla_instance.hpp":
+        cppclass PE_Parameters:
+            PE_Parameters()
+            PE_Parameters(bool use_moving_obstacles, bool sync_shadow_owners, double syncronization_overlap_factor, bool average_force_torque_over_two_timesteps, stdint.uint32_t num_pe_sub_cycles)
+            void add_global_constant_force(const Vector3d & f, const string & name)
+        void mpi_init_lb_walberla(double viscosity, double density, double agrid, double tau, double kT, unsigned int seed, PE_Parameters pe_params) except +
         void mpi_init_lb_walberla(double viscosity, double density, double agrid, double tau, double kT, unsigned int seed) except +
         void mpi_destruct_lb_walberla() except +
 

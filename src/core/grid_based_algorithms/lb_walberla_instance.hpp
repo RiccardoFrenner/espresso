@@ -23,6 +23,7 @@
 
 #ifdef LB_WALBERLA
 #include <LBWalberlaBase.hpp>
+#include <PE_Parameters.hpp>
 
 struct LBWalberlaParams {
   LBWalberlaParams(double agrid, double tau) : m_agrid(agrid), m_tau(tau) {}
@@ -52,7 +53,8 @@ LBWalberlaParams *lb_walberla_params();
  *  @param tau    LB time step
  */
 void mpi_init_lb_walberla(double viscosity, double density, double agrid,
-                          double tau, double kT, unsigned int seed);
+                          double tau, double kT, unsigned int seed,
+                          PE_Parameters pe_params = PE_Parameters());
 
 /** @brief Destruct the LBWalberla instance and set lattice switch to NONE */
 void mpi_destruct_lb_walberla();

@@ -20,6 +20,7 @@
 #define LB_WALBERLA_INIT_HPP
 
 #include "LBWalberlaBase.hpp"
+#include "PE_Parameters.hpp"
 
 #include <utils/Vector.hpp>
 
@@ -29,6 +30,7 @@ LBWalberlaBase *new_lb_walberla(double viscosity, double density, double agrid,
                                 double tau,
                                 const Utils::Vector3d &box_dimensions,
                                 const Utils::Vector3i &node_grid, double kT,
-                                unsigned int seed);
+                                unsigned int seed,
+                                PE_Parameters pe_params = PE_Parameters());
 
 #endif

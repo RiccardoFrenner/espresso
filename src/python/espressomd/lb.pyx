@@ -394,6 +394,9 @@ IF LB_WALBERLA:
         def _set_params_in_es_core(self):
             pass
 
+        def valid_keys(self):
+            return super().valid_keys().union({"pe_params"})
+
         def default_params(self):
             return {"agrid": -1.0,
                     "dens": -1.0,
@@ -402,13 +405,33 @@ IF LB_WALBERLA:
                     "bulk_visc": -1.0,
                     "tau": -1.0,
                     "kT": 0.0,
-                    "seed": 0}
+                    "seed": 0,
+                    "pe_params": None}
 
         def _set_lattice_switch(self):
             raise Exception("This may not be called")
 
         def _activate_method(self):
             self.validate_params()
+
+            # convert pe parameters
+            cdef PE_Parameters pe_params = PE_Parameters()
+            cdef Vector3d const_global_force
+            if self._params['pe_params']:
+                pe_params = PE_Parameters(
+                    self._params['pe_params'][0],
+                    self._params['pe_params'][1],
+                    self._params['pe_params'][2],
+                    self._params['pe_params'][3],
+                    self._params['pe_params'][4],
+                )
+                for force, name in self._params['pe_params'][5]:
+                    for i in range(3):
+                        const_global_force[i] = force[i]
+                    pe_params.add_global_constant_force(
+                        const_global_force,
+                        utils.to_char_pointer(name)
+                    )
 
             # unit conversion
             lb_visc = self._params["visc"] * \
@@ -418,7 +441,7 @@ IF LB_WALBERLA:
                 self._params['tau']**2 / self._params['agrid']**2
             mpi_init_lb_walberla(
                 lb_visc, lb_dens, self._params["agrid"], self._params["tau"],
-                lb_kT, self._params['seed'])
+                lb_kT, self._params['seed'], pe_params)
             utils.handle_errors("LB fluid activation")
             self.ext_force_density = self._params["ext_force_density"]
 
@@ -481,29 +504,29 @@ IF LB_WALBERLA:
             return obj
 
         def add_particle(self, uid, pos, radius, vel, material_name="iron"):
-        """Adds a sphere particle at the given position
+            """Adds a sphere particle at the given position
 
-        Parameters
-        ----------
-        uid : :obj:`int`
-            User id to uniquely identify the particle.
-        pos : (3,) array_like of :obj:`float`
-            Position at which the particle should be.
-        radius : :obj:`float`
-            Radius of the particle.
-        vel : (3,) array_like of :obj:`float`
-            Linear velocity of the particle.
-        material_name : :obj:`str`
-            Name of the particle's material.
-        """
-        cdef Vector3d _pos
-        cdef Vector3d _vel
+            Parameters
+            ----------
+            uid : :obj:`int`
+                User id to uniquely identify the particle.
+            pos : (3,) array_like of :obj:`float`
+                Position at which the particle should be.
+            radius : :obj:`float`
+                Radius of the particle.
+            vel : (3,) array_like of :obj:`float`
+                Linear velocity of the particle.
+            material_name : :obj:`str`
+                Name of the particle's material.
+            """
+            cdef Vector3d _pos
+            cdef Vector3d _vel
 
-        for i in range(3):
-            _pos[i] = pos[i]
-            _vel[i] = vel[i]
+            for i in range(3):
+                _pos[i] = pos[i]
+                _vel[i] = vel[i]
 
-        pe_add_particle(uid, _pos, radius, _vel, material_name)
+            pe_add_particle(uid, _pos, radius, _vel, utils.to_char_pointer(material_name))
 
         def remove_particle(self, uid):
             """Removes the specified particle

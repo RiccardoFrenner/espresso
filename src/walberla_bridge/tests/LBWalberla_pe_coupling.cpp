@@ -50,7 +50,7 @@ constexpr unsigned int seed = 3;
 constexpr double kT = 0.0014;
 
 BOOST_AUTO_TEST_CASE(add_particle_inside_domain) {
-  walberla::PE_Parameters peParams(true, true, 1.5, true, 1);
+  PE_Parameters peParams(true, true, 1.5, true, 1);
   auto lb = std::make_shared<LBWalberlaD3Q19MRT>(
       viscosity, density, agrid, tau, box_dimensions, mpi_shape, 1, peParams);
 
@@ -88,7 +88,7 @@ BOOST_AUTO_TEST_CASE(add_particle_inside_domain) {
 }
 
 BOOST_AUTO_TEST_CASE(remove_particle) {
-  walberla::PE_Parameters peParams(true, true, 1.5, true, 1);
+  PE_Parameters peParams(true, true, 1.5, true, 1);
   auto lb = std::make_shared<LBWalberlaD3Q19MRT>(
       viscosity, density, agrid, tau, box_dimensions, mpi_shape, 1, peParams);
 

@@ -36,18 +36,18 @@ LBWalberlaBase *new_lb_walberla(double viscosity, double density, double agrid,
                                 double tau,
                                 const Utils::Vector3d &box_dimensions,
                                 const Utils::Vector3i &node_grid, double kT,
-                                unsigned int seed) {
+                                unsigned int seed, PE_Parameters pe_params) {
 
   LBWalberlaBase *lb_walberla_instance;
   if (kT == 0.) { // un-thermalized LB
-    lb_walberla_instance =
-        new walberla::LBWalberlaD3Q19MRT(walberla::LBWalberlaD3Q19MRT{
-            viscosity, density, agrid, tau, box_dimensions, node_grid, 1});
+    lb_walberla_instance = new walberla::LBWalberlaD3Q19MRT(
+        walberla::LBWalberlaD3Q19MRT{viscosity, density, agrid, tau,
+                                     box_dimensions, node_grid, 1, pe_params});
   } else { // thermalized LB
     lb_walberla_instance = new walberla::LBWalberlaD3Q19FluctuatingMRT(
         walberla::LBWalberlaD3Q19FluctuatingMRT{viscosity, density, agrid, tau,
                                                 box_dimensions, node_grid, 1,
-                                                kT, seed});
+                                                kT, seed, pe_params});
   }
   return lb_walberla_instance;
 }
