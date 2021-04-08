@@ -671,9 +671,29 @@ void lb_lbfluid_add_force_at_pos(const Utils::Vector3d &pos,
 
 void pe_add_particle(std::uint64_t uid, Utils::Vector3d const &pos,
                      double radius, Utils::Vector3d const &vel,
-                     std::string const &material_name) {}
+                     std::string const &material_name) {
+  if (lattice_switch == ActiveLB::WALBERLA) {
+#ifdef LB_WALBERLA
+    auto res = ::Communication::mpiCallbacks().call(
+        ::Communication::Result::reduction, std::logical_or<>(),
+        Walberla::PE_Coupling::add_particle, uid, pos, radius, vel,
+        material_name);
+#endif
+  } else {
+    throw NoLBActive();
+  }
+}
 
-void pe_remove_particle(std::uint64_t uid) {}
+void pe_remove_particle(std::uint64_t uid) {
+  if (lattice_switch == ActiveLB::WALBERLA) {
+#ifdef LB_WALBERLA
+    ::Communication::mpiCallbacks().call_all(
+        Walberla::PE_Coupling::remove_particle, uid);
+#endif
+  } else {
+    throw NoLBActive();
+  }
+}
 
 Utils::Vector3d pe_get_particle_velocity(std::uint64_t uid) {
 #ifdef LB_WALBERLA

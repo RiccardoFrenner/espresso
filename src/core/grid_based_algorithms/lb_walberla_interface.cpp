@@ -161,9 +161,9 @@ REGISTER_CALLBACK(add_force_at_pos)
 
 namespace PE_Coupling {
 
-bool add_particle(std::uint64_t uid, Utils::Vector3d const &gpos, double radius,
-                  Utils::Vector3d const &linVel,
-                  std::string const &material_name = "iron") {
+bool add_particle(std::uint64_t uid, Utils::Vector3d gpos, double radius,
+                  Utils::Vector3d linVel,
+                  std::string material_name = "iron") {
   auto res =
       lb_walberla()->add_particle(uid, gpos, radius, linVel, material_name);
   return res;

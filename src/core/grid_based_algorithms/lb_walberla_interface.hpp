@@ -62,9 +62,8 @@ void add_force_at_pos(Utils::Vector3d pos, Utils::Vector3d f);
 
 namespace PE_Coupling {
 
-bool add_particle(std::uint64_t uid, Utils::Vector3d const &gpos, double radius,
-                  Utils::Vector3d const &linVel,
-                  std::string const &material_name = "iron");
+bool add_particle(std::uint64_t uid, Utils::Vector3d gpos, double radius,
+                  Utils::Vector3d linVel, std::string material_name = "iron");
 void remove_particle(std::uint64_t uid);
 boost::optional<Utils::Vector3d> get_particle_velocity(std::uint64_t uid);
 boost::optional<Utils::Vector3d>
