@@ -39,6 +39,15 @@ if has_features("VIRTUAL_SITES"):
         """Virtual sites implementation which does nothing (default)"""
         _so_name = "VirtualSites::VirtualSitesOff"
 
+    if has_features("LB_WALBERLA"):
+        @script_interface_register
+        class VirtualSitesWalberlaMovingBoundary(ScriptInterfaceHelper):
+
+            """Virtual sites acting as "shadows" for the particles in Walberla's
+            physics engine (PE).
+            """
+            _so_name = "VirtualSites::VirtualSitesWalberlaMovingBoundary"
+
 
 if has_features("VIRTUAL_SITES_INERTIALESS_TRACERS"):
     @script_interface_register
@@ -49,14 +58,6 @@ if has_features("VIRTUAL_SITES_INERTIALESS_TRACERS"):
 
         """
         _so_name = "VirtualSites::VirtualSitesInertialessTracers"
-
-    @script_interface_register
-    class VirtualSitesWalberlaMovingBoundary(ScriptInterfaceHelper):
-
-        """Virtual sites acting as "shadows" for the particles in Walberla's
-           physics engine (PE).
-        """
-        _so_name = "VirtualSites::VirtualSitesWalberlaMovingBoundary"
 
 
 if has_features("VIRTUAL_SITES_RELATIVE"):
