@@ -19,13 +19,15 @@ include(unit_test)
 
 unit_test(NAME LBWalberla_test SRC LBWalberla_test.cpp DEPENDS WalberlaBridge
           EspressoUtils Boost::mpi ${WALBERLA_LIBS})
-unit_test(NAME LBWalberla_pe_test SRC LBWalberla_pe_coupling.cpp DEPENDS WalberlaBridge
+unit_test(NAME LBWalberla_pe_coupling SRC LBWalberla_pe_coupling.cpp DEPENDS WalberlaBridge
           EspressoUtils Boost::mpi ${WALBERLA_LIBS})
-unit_test(NAME LBWalberla_settling_sphere_test SRC LBWalberla_settling_sphere_test.cpp DEPENDS WalberlaBridge
-          EspressoUtils Boost::mpi ${WALBERLA_LIBS})
+unit_test(NAME LBWalberla_settling_sphere_test SRC LBWalberla_settling_sphere_test.cpp DEPENDS WalberlaBridge EspressoUtils Boost::mpi ${WALBERLA_LIBS})
+unit_test(NAME LBWalberla_particle_fluid_moment_conservation SRC LBWalberla_particle_fluid_moment_conservation.cpp DEPENDS WalberlaBridge EspressoUtils Boost::mpi ${WALBERLA_LIBS})
 target_include_directories(LBWalberla_test PRIVATE ${WALBERLA_INCLUDE_DIRS}
                                                    ${walberla_BINARY_DIR}/src)
-target_include_directories(LBWalberla_pe_test PRIVATE ${WALBERLA_INCLUDE_DIRS}
+target_include_directories(LBWalberla_pe_coupling PRIVATE ${WALBERLA_INCLUDE_DIRS}
                                                       ${walberla_BINARY_DIR}/src)
 target_include_directories(LBWalberla_settling_sphere_test PRIVATE ${WALBERLA_INCLUDE_DIRS}
                                                                    ${walberla_BINARY_DIR}/src)
+target_include_directories(LBWalberla_particle_fluid_moment_conservation PRIVATE ${WALBERLA_INCLUDE_DIRS}
+                                                                                 ${walberla_BINARY_DIR}/src)
