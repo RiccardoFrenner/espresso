@@ -80,6 +80,10 @@ bool add_particle_torque(std::uint64_t uid, Utils::Vector3d const &tau);
 void sync_particles();
 void map_particles_to_lb_grid();
 void finish_particle_adding();
+void create_particle_material(std::string const &name, double density,
+                              double cor, double csf, double cdf,
+                              double poisson, double young, double stiffness,
+                              double dampingN, double dampingT);
 
 } // namespace PE_Coupling
 

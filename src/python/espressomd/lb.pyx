@@ -503,7 +503,38 @@ IF LB_WALBERLA:
                 obj = VTKOutputManual(*args)
             return obj
 
-        def add_particle(self, uid, pos, radius, vel, material_name="iron"):
+        def create_particle_material(self, name, density=7.874, cor=.5, csf=.1,
+                                     cdf=.1, poisson=.24, young=200,
+                                     stiffness=200, dampingN=0, dampingT=0):
+            """Creates a new custom material which is used by the pe particles.
+               Uses iron properties for not specified values.
+
+            Parameters
+            ----------
+            name : :obj:`str`
+                The name of the custom material.
+            density : :obj:`float`
+                The density of the custom material.
+            cor : :obj:`float`
+                The coefficient of restitution of the custom material.
+            csf : :obj:`float`
+                The coefficient of static friction of the custom material.
+            cdf : :obj:`float`
+                The coefficient of dynamic friction of the custom material.
+            poisson : :obj:`float`
+                The Poisson's ratio of the custom material.
+            young : :obj:`float`
+                The Young's modulus of the custom material.
+            stiffness : :obj:`float`
+                The stiffness in normal direction of the material's contact region.
+            dampingN : :obj:`float`
+                The damping coefficient in normal direction of the material's contact region.
+            dampingT : :obj:`float`
+                The damping coefficient in tangential direction of the material's contact region.
+            """
+            pe_create_particle_material(utils.to_char_pointer(name), density, cor, csf, cdf, poisson, young, stiffness, dampingN, dampingT)
+
+        def add_particle(self, uid, pos, radius, vel=[0,0,0], material_name="iron"):
             """Adds a sphere particle at the given position
 
             Parameters

@@ -847,3 +847,18 @@ void pe_finish_particle_adding() {
     throw NoLBActive();
   }
 }
+
+void pe_create_particle_material(std::string const &name, double density,
+                                 double cor, double csf, double cdf,
+                                 double poisson, double young, double stiffness,
+                                 double dampingN, double dampingT) {
+  if (lattice_switch == ActiveLB::WALBERLA) {
+#ifdef LB_WALBERLA
+    ::Communication::mpiCallbacks().call_all(
+        Walberla::PE_Coupling::create_particle_material, name, density, cor,
+        csf, cdf, poisson, young, stiffness, dampingN, dampingT);
+#endif
+  } else {
+    throw NoLBActive();
+  }
+}

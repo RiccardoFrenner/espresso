@@ -335,4 +335,26 @@ void pe_map_particles_to_lb_grid();
  */
 void pe_finish_particle_adding();
 
+/**
+ * @brief Creates a new custom material which is used by the pe particles.
+ *        Uses iron properties for not specified values.
+ * @param name	    The name of the custom material.
+ * @param density	The density of the custom material.
+ * @param cor	    The coefficient of restitution of the custom material.
+ * @param csf	    The coefficient of static friction of the custom material.
+ * @param cdf	    The coefficient of dynamic friction of the custom material.
+ * @param poisson	The Poisson's ratio of the custom material.
+ * @param young	    The Young's modulus of the custom material.
+ * @param stiffness	The stiffness in normal direction of the material's
+ * contact region.
+ * @param dampingN	The damping coefficient in normal direction of the
+ * material's contact region.
+ * @param dampingT	The damping coefficient in tangential direction of the
+ * material's contact region.
+ */
+void pe_create_particle_material(std::string const &name, double density,
+                                 double cor, double csf, double cdf,
+                                 double poisson, double young, double stiffness,
+                                 double dampingN, double dampingT);
+
 #endif

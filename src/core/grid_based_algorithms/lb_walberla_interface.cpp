@@ -162,8 +162,7 @@ REGISTER_CALLBACK(add_force_at_pos)
 namespace PE_Coupling {
 
 bool add_particle(std::uint64_t uid, Utils::Vector3d gpos, double radius,
-                  Utils::Vector3d linVel,
-                  std::string material_name = "iron") {
+                  Utils::Vector3d linVel, std::string material_name = "iron") {
   auto res =
       lb_walberla()->add_particle(uid, gpos, radius, linVel, material_name);
   return res;
@@ -258,6 +257,16 @@ REGISTER_CALLBACK(map_particles_to_lb_grid)
 void finish_particle_adding() { lb_walberla()->finish_particle_adding(); }
 
 REGISTER_CALLBACK(finish_particle_adding)
+
+void create_particle_material(std::string const &name, double density,
+                              double cor, double csf, double cdf,
+                              double poisson, double young, double stiffness,
+                              double dampingN, double dampingT) {
+  lb_walberla()->create_particle_material(name, density, cor, csf, cdf, poisson,
+                                          young, stiffness, dampingN, dampingT);
+}
+
+REGISTER_CALLBACK(create_particle_material)
 
 } // namespace PE_Coupling
 

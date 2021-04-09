@@ -59,6 +59,7 @@ IF LB_WALBERLA:
         void pe_sync_particles() except +
         void pe_map_particles_to_lb_grid() except +
         void pe_finish_particle_adding() except +
+        void pe_create_particle_material(const string & name, double density, double cor, double csf, double cdf, double poisson, double young, double stiffness, double dampingN, double dampingT) except +
 
     cdef extern from "grid_based_algorithms/lb_interface.hpp" namespace 'OutputVTK':
 
