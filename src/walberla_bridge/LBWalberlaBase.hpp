@@ -195,8 +195,6 @@ public:
                                         double poisson, double young,
                                         double stiffness, double dampingN,
                                         double dampingT) = 0;
-  virtual void create_particle_material(std::string const &name,
-                                        double density) = 0;
   virtual ~LBWalberlaBase() = default;
 };
 
