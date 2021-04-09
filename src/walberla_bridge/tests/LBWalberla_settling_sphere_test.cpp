@@ -148,9 +148,8 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
 
   const double dx = 1.0;
 
-  const uint_t timesteps =
-      func_test ? 1 : (shortrun ? uint_t(200) : uint_t(250000));
-  const uint_t num_pe_sub_cycles = uint_t(1);
+  const uint_t timesteps = func_test ? 1 : (shortrun ? 200 : 250000);
+  const uint_t num_pe_sub_cycles = 1;
 
   ///////////////////////////
   // BLOCK STRUCTURE SETUP //
@@ -206,7 +205,8 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
       pe_params);
 
   // add the sphere
-  lb->create_particle_material("mySphereMat", density_sphere);
+  lb->create_particle_material("mySphereMat", density_sphere, 0.5, 0.1, 0.1,
+                               0.24, 200, 200, 0, 0);
   lb->add_particle(sphere_uid, initial_position, 0.5 * diameter,
                    linear_velocity, "mySphereMat");
   lb->finish_particle_adding();
