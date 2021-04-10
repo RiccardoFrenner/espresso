@@ -51,7 +51,6 @@ constexpr double PARTICLE_RADIUS = 15e-3 / AGRID;
 // constexpr double PARTICLE_DENSITY = 1. / PARTICLE_VOLUME;
 constexpr double PARTICLE_DENSITY = 1120. / DENS;
 
-
 constexpr Vector3d BOX_DIMENSIONS{GRID_SIZE * AGRID, GRID_SIZE *AGRID,
                                   GRID_SIZE *AGRID};
 constexpr double SYSTEM_VOLUME =
@@ -69,7 +68,7 @@ BOOST_AUTO_TEST_CASE(external_force) {
   PE_Parameters pe_params(true, true, 1.5, true, 1);
   pe_params.add_global_constant_force(-SYSTEM_VOLUME * EXT_FORCE_DENSITY,
                                       "External force");
-  auto lbf = new_lb_walberla(KVISC, DENS, AGRID, TIME_STEP, BOX_DIMENSIONS,
+  auto lbf = new_lb_walberla(KVISC, DENS, {GRID_SIZE, GRID_SIZE, GRID_SIZE},
                              mpi_shape, 0, 0, pe_params);
   lbf->create_particle_material("myMat", PARTICLE_DENSITY, .5, .1, .1, .24, 200,
                                 200, 0, 0);

@@ -37,7 +37,6 @@ using Utils::Vector3i;
 using uint_t = std::size_t;
 using walberla::LBWalberlaD3Q19MRT;
 
-constexpr double tau = 0.34;
 Vector3i mpi_shape;
 
 // Recreation of Walberla's SettlingSphere test
@@ -190,7 +189,6 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
 
   Vector3d linear_velocity{0, 0, 0};
   uint sphere_uid = 123;
-  double agrid = dx_SI;
   const int n_ghost_layers = 1;
 
   PE_Parameters pe_params(true, sync_shadow_owners, overlap / dx,
@@ -200,8 +198,8 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
       std::make_pair(gravitational_force, "Gravitational Force"));
 
   auto lb = std::make_shared<LBWalberlaD3Q19MRT>(
-      viscosity, density_fluid, tau, n_blocks_per_direction,
-      n_cells_per_block_per_direction, dx_SI, mpi_shape, n_ghost_layers,
+      viscosity, density_fluid, n_blocks_per_direction,
+      n_cells_per_block_per_direction, mpi_shape, n_ghost_layers,
       pe_params);
 
   // add the sphere

@@ -52,7 +52,7 @@ constexpr double kT = 0.0014;
 BOOST_AUTO_TEST_CASE(add_particle_inside_domain) {
   PE_Parameters peParams(true, true, 1.5, true, 1);
   auto lb = std::make_shared<LBWalberlaD3Q19MRT>(
-      viscosity, density, agrid, tau, box_dimensions, mpi_shape, 1, peParams);
+      viscosity, density, grid_dimensions, mpi_shape, 1, peParams);
 
   // Create particle
   std::uint64_t uid = 12;
@@ -90,7 +90,7 @@ BOOST_AUTO_TEST_CASE(add_particle_inside_domain) {
 BOOST_AUTO_TEST_CASE(remove_particle) {
   PE_Parameters peParams(true, true, 1.5, true, 1);
   auto lb = std::make_shared<LBWalberlaD3Q19MRT>(
-      viscosity, density, agrid, tau, box_dimensions, mpi_shape, 1, peParams);
+      viscosity, density, grid_dimensions, mpi_shape, 1, peParams);
 
   // Create particle
   std::uint64_t uid = 12;
