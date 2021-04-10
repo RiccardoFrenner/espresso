@@ -75,6 +75,26 @@ bool in_local_halo(Utils::Vector3d const &pos);
  */
 void add_md_force(Utils::Vector3d const &pos, Utils::Vector3d const &force);
 
+Utils::Vector3d lb_particle_coupling_noise(bool enabled, int part_id,
+                                           const OptionalCounter &rng_counter);
+
+Utils::Vector3d lb_particle_coupling_drift_vel_offset(const Particle &p);
+
+void mpi_bcast_lb_particle_coupling();
+
+/** calculate drag force on a single particle
+ *
+ *  Section II.C. @cite ahlrichs99a
+ *
+ *  @param[in] p             The coupled particle.
+ *  @param vel_offset        Velocity offset to be added to interpolated LB
+ * velocity before calculating the force
+ *
+ *  @return The viscous coupling force
+ */
+Utils::Vector3d lb_drag_force(Particle const &p,
+                              const Utils::Vector3d &vel_offset);
+
 struct LB_Particle_Coupling {
   OptionalCounter rng_counter_coupling;
   /*

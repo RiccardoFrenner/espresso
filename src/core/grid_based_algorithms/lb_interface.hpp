@@ -357,4 +357,11 @@ void pe_create_particle_material(std::string const &name, double density,
                                  double poisson, double young, double stiffness,
                                  double dampingN, double dampingT);
 
+/**
+ * @brief Calculates the interpolated fluid density on the master process.
+ * @param pos Position at which the density is to be calculated.
+ * @retval interpolated fluid density.
+ */
+double lb_lbfluid_get_interpolated_density(const Utils::Vector3d &pos);
+
 #endif

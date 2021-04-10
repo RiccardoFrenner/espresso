@@ -62,8 +62,7 @@ void lb_lbcoupling_deactivate() {
     runtimeWarningMsg()
         << "Recalculating forces, so the LB coupling forces are not "
            "included in the particle force the first time step. This "
-           "only matters if it happens frequently during "
-           "sampling.";
+           "only matters if it happens frequently during sampling.";
   }
 
   lb_particle_coupling.couple_to_md = false;
@@ -71,7 +70,6 @@ void lb_lbcoupling_deactivate() {
 
 void lb_lbcoupling_set_gamma(double gamma) {
   lb_particle_coupling.gamma = gamma;
-  mpi_bcast_lb_particle_coupling();
 }
 
 double lb_lbcoupling_get_gamma() { return lb_particle_coupling.gamma; }
@@ -91,15 +89,15 @@ uint64_t lb_lbcoupling_get_rng_state() {
   if (lattice_switch == ActiveLB::WALBERLA) {
     return lb_coupling_get_rng_state_cpu();
   }
-  return {};
+  throw std::runtime_error("No LB active");
 }
 
 void lb_lbcoupling_set_rng_state(uint64_t counter) {
   if (lattice_switch == ActiveLB::WALBERLA) {
     lb_particle_coupling.rng_counter_coupling =
         Utils::Counter<uint64_t>(counter);
-    mpi_bcast_lb_particle_coupling();
-  }
+  } else
+    throw std::runtime_error("No LB active");
 }
 
 /**
@@ -113,41 +111,43 @@ void add_md_force(Utils::Vector3d const &pos, Utils::Vector3d const &force) {
   auto const delta_j = -(time_step / lb_lbfluid_get_lattice_speed()) * force;
   lb_lbinterpolation_add_force_density(pos, delta_j);
 }
+/** @brief Calculate particle drift velocity offset due to ENGINE and
+ *  ELECTROHYDRODYNAMICS */
+Utils::Vector3d lb_particle_coupling_drift_vel_offset(const Particle &p) {
+  Utils::Vector3d vel_offset{};
+#ifdef ENGINE
+  if (p.p.swim.swimming) {
+    vel_offset += p.p.swim.v_swim * p.r.calc_director();
+  }
+#endif
 
-/** Coupling of a single particle to viscous fluid with Stokesian friction.
+#ifdef LB_ELECTROHYDRODYNAMICS
+  vel_offset += p.p.mu_E;
+#endif
+  return vel_offset;
+}
+
+/** calculate drag force on a single particle
  *
  *  Section II.C. @cite ahlrichs99a
  *
  *  @param[in] p             The coupled particle.
- *  @param[in]     f_random  Additional force to be included.
+ *  @param vel_offset        Velocity offset to be added to interpolated LB
+ * velocity before calculating the force
  *
- *  @return The viscous coupling force plus f_random.
+ *  @return The viscous coupling force
  */
-Utils::Vector3d lb_viscous_coupling(Particle const &p,
-                                    Utils::Vector3d const &f_random) {
+Utils::Vector3d lb_drag_force(Particle const &p,
+                              const Utils::Vector3d &vel_offset) {
   /* calculate fluid velocity at particle's position
      this is done by linear interpolation (eq. (11) @cite ahlrichs99a) */
   auto const interpolated_u =
       lb_lbinterpolation_get_interpolated_velocity(p.r.p) *
       lb_lbfluid_get_lattice_speed();
 
-  Utils::Vector3d v_drift = interpolated_u;
-#ifdef ENGINE
-  if (p.p.swim.swimming) {
-    v_drift += p.p.swim.v_swim * p.r.calc_director();
-  }
-#endif
-
-#ifdef LB_ELECTROHYDRODYNAMICS
-  v_drift += p.p.mu_E;
-#endif
-
+  Utils::Vector3d v_drift = interpolated_u + vel_offset;
   /* calculate viscous force (eq. (9) @cite ahlrichs99a) */
-  auto const force = -lb_lbcoupling_get_gamma() * (p.m.v - v_drift) + f_random;
-
-  add_md_force(p.r.p, force);
-
-  return force;
+  return -lb_lbcoupling_get_gamma() * (p.m.v - v_drift);
 }
 
 using Utils::Vector;
@@ -221,6 +221,42 @@ void add_swimmer_force(Particle &p) {
 }
 #endif
 
+Utils::Vector3d lb_particle_coupling_noise(bool enabled, int part_id,
+                                           const OptionalCounter &rng_counter) {
+  if (enabled) {
+    return Random::noise_uniform<RNGSalt::PARTICLES>(rng_counter->value(), 0,
+                                                     part_id);
+  }
+  return {};
+}
+
+void couple_particle(Particle &p, bool couple_virtual, double noise_amplitude,
+                     const OptionalCounter &rng_counter) {
+
+  if (p.p.is_virtual and not couple_virtual)
+    return;
+
+  /* Particles within one agrid of the outermost lattice point
+   * of the lb domain can contribute forces to the local lb due to
+   * interpolation on neighboring LB nodes. If the particle
+   * IS in the local domain, we also add the opposing
+   * force to the particle. */
+  if (in_local_halo(p.r.p)) {
+    auto const drag_force =
+        lb_drag_force(p, lb_particle_coupling_drift_vel_offset(p));
+    auto const random_force =
+        noise_amplitude * lb_particle_coupling_noise(noise_amplitude > 0.0,
+                                                     p.identity(), rng_counter);
+    auto const coupling_force = drag_force + random_force;
+    add_md_force(p.r.p, coupling_force);
+    if (in_local_domain(p.r.p, local_geo)) {
+      /* Particle is in our LB volume, so this node
+       * is responsible to adding its force */
+      p.f.f += coupling_force;
+    }
+  }
+}
+
 void lb_lbcoupling_calc_particle_lattice_ia(
     bool couple_virtual, const ParticleRange &particles,
     const ParticleRange &more_particles) {
@@ -245,44 +281,21 @@ void lb_lbcoupling_calc_particle_lattice_ia(
                                   time_step)
                       : 0.0;
 
-        auto f_random = [noise_amplitude](int id) -> Utils::Vector3d {
-          if (noise_amplitude > 0.0) {
-            return Random::noise_uniform<RNGSalt::PARTICLES>(
-                lb_particle_coupling.rng_counter_coupling->value(), 0, id);
-          }
-          return {};
-        };
-
-        auto couple_particle = [&](Particle &p) -> void {
-          if (p.p.is_virtual and !couple_virtual)
-            return;
-
-          /* Particle is in our LB volume, so this node
-           * is responsible to adding its force */
-          if (in_local_domain(p.r.p, local_geo)) {
-            auto const force = lb_viscous_coupling(
-                p, noise_amplitude * f_random(p.identity()));
-            /* add force to the particle */
-            p.f.f += force;
-            /* Particle is not in our domain, but adds to the force
-             * density in our domain, only calculate contribution to
-             * the LB force density. */
-          } else if (in_local_halo(p.r.p)) {
-            lb_viscous_coupling(p, noise_amplitude * f_random(p.identity()));
-          }
-
+        /* Couple particles ranges */
+        for (auto &p : particles) {
+          couple_particle(p, couple_virtual, noise_amplitude,
+                          lb_particle_coupling.rng_counter_coupling);
 #ifdef ENGINE
           add_swimmer_force(p);
 #endif
-        };
-
-        /* Couple particles ranges */
-        for (auto &p : particles) {
-          couple_particle(p);
         }
 
         for (auto &p : more_particles) {
-          couple_particle(p);
+          couple_particle(p, couple_virtual, noise_amplitude,
+                          lb_particle_coupling.rng_counter_coupling);
+#ifdef ENGINE
+          add_swimmer_force(p);
+#endif
         }
 
         break;

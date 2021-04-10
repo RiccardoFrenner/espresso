@@ -24,6 +24,7 @@
 #ifdef LB_WALBERLA
 #include <LBWalberlaBase.hpp>
 #include <PE_Parameters.hpp>
+#include <lb_walberla_init.hpp>
 
 struct LBWalberlaParams {
   LBWalberlaParams(double agrid, double tau) : m_agrid(agrid), m_tau(tau) {}
@@ -35,14 +36,16 @@ private:
   double m_tau;
 };
 
-/** @brief Initialize Walberla's MPI manager */
-void walberla_mpi_init();
-
 /** @brief Access the per-MPI-node LBWalberla instance */
 LBWalberlaBase *lb_walberla();
 
 /** @brief Access the Walberla parameters */
 LBWalberlaParams *lb_walberla_params();
+
+void init_lb_walberla(double viscosity, double density, double agrid,
+                      double tau, const Utils::Vector3i &grid_dimensions,
+                      const Utils::Vector3i &node_grid, double kT,
+                      unsigned int seed, PE_Parameters pe_params = PE_Parameters());
 
 /** @brief Create the LBWalberla instance and sets the lattice switch to
  *  WALBERLA
@@ -53,7 +56,8 @@ LBWalberlaParams *lb_walberla_params();
  *  @param tau    LB time step
  */
 void mpi_init_lb_walberla(double viscosity, double density, double agrid,
-                          double tau, double kT, unsigned int seed,
+                          double tau, Utils::Vector3d box_size, double kT,
+                          unsigned int seed,
                           PE_Parameters pe_params = PE_Parameters());
 
 /** @brief Destruct the LBWalberla instance and set lattice switch to NONE */

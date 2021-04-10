@@ -509,7 +509,6 @@ private:
 
   void init_blockforest(Utils::Vector3i const &n_blocks,
                         Utils::Vector3i const &n_cells_per_block,
-                        double const lb_cell_size,
                         Utils::Vector3i const &n_processes) {
 
     // Running a simulation with periodic boundaries needs at least three
@@ -542,15 +541,15 @@ private:
 public:
   LBWalberlaImpl(Utils::Vector3i const &n_blocks,
                  Utils::Vector3i const &n_cells_per_block,
-                 double const lb_cell_size, Utils::Vector3i const &n_processes,
-                 int n_ghost_layers, PE_Parameters pe_params = PE_Parameters())
+                 Utils::Vector3i const &n_processes, int n_ghost_layers,
+                 PE_Parameters pe_params = PE_Parameters())
       : m_n_ghost_layers(n_ghost_layers),
         m_pe_parameters(std::move(pe_params)) {
 
     if (m_n_ghost_layers <= 0)
       throw std::runtime_error("At least one ghost layer must be used");
 
-    init_blockforest(n_blocks, n_cells_per_block, lb_cell_size, n_processes);
+    init_blockforest(n_blocks, n_cells_per_block, n_processes);
 
     init_lb_fields();
 
@@ -569,28 +568,17 @@ public:
     // (*m_bodyStats)();
   }
 
-  LBWalberlaImpl(double viscosity, double agrid, double tau,
-                 const Utils::Vector3d &box_dimensions,
+  LBWalberlaImpl(double viscosity, const Utils::Vector3i &grid_dimensions,
                  const Utils::Vector3i &node_grid, int n_ghost_layers,
                  PE_Parameters pe_params = PE_Parameters())
-      : m_n_ghost_layers(n_ghost_layers),
-        m_pe_parameters(std::move(pe_params)) {
+      : m_pe_parameters(std::move(pe_params)) {
+    m_grid_dimensions = grid_dimensions;
+    m_n_ghost_layers = n_ghost_layers;
 
     if (m_n_ghost_layers <= 0)
       throw std::runtime_error("At least one ghost layer must be used");
-
-    for (int i = 0; i < 3; i++) {
-      if (fabs(round(box_dimensions[i] / agrid) * agrid - box_dimensions[i]) /
-              box_dimensions[i] >
-          std::numeric_limits<double>::epsilon()) {
-        throw std::runtime_error(
-            "Box length not commensurate with agrid in direction " +
-            std::to_string(i));
-      }
-      m_grid_dimensions[i] = int(std::round(box_dimensions[i] / agrid));
+    for (int i : {0, 1, 2}) {
       if (m_grid_dimensions[i] % node_grid[i] != 0) {
-        printf("Grid dimension: %d, node grid %d\n", m_grid_dimensions[i],
-               node_grid[i]);
         throw std::runtime_error(
             "LB grid dimensions and mpi node grid are not compatible.");
       }
@@ -600,7 +588,7 @@ public:
                                       int(m_grid_dimensions[1] / node_grid[1]),
                                       int(m_grid_dimensions[2] / node_grid[2])};
 
-    init_blockforest(node_grid, n_cells_per_block, agrid, node_grid);
+    init_blockforest(node_grid, n_cells_per_block, node_grid);
 
     init_lb_fields();
 
@@ -618,7 +606,8 @@ public:
     // Init and register pdf field
     m_pdf_field_id = lbm::addPdfFieldToStorage(
         m_blocks, "pdf field", *(m_lattice_model.get()),
-        to_vector3(Utils::Vector3d{}), real_t(density), m_n_ghost_layers);
+        to_vector3(Utils::Vector3d{}), real_t(density), m_n_ghost_layers,
+        field::fzyx);
 
     // pe needs to be initialized even if it is not used.
     // The boundary handling would otherwise not work since it includes field
@@ -666,13 +655,6 @@ public:
   };
 
   void ghost_communication() override { (*m_communication)(); }
-
-  template <typename Function>
-  void interpolate_bspline_at_pos(Utils::Vector3d pos, Function f) const {
-    Utils::Interpolation::bspline_3d<2>(
-        pos, f, Utils::Vector3d{1.0, 1.0, 1.0}, // grid spacing
-        Utils::Vector3d::broadcast(.5));        // offset (cell center)
-  }
 
   // Velocity
   boost::optional<Utils::Vector3d>
@@ -728,6 +710,32 @@ public:
           }
         });
     return {v};
+  };
+
+  boost::optional<double> get_interpolated_density_at_pos(
+      const Utils::Vector3d &pos,
+      bool consider_points_in_halo = false) const override {
+    if (!consider_points_in_halo and !pos_in_local_domain(pos))
+      return {};
+    if (consider_points_in_halo and !pos_in_local_halo(pos))
+      return {};
+    double dens = 0.0;
+    interpolate_bspline_at_pos(
+        pos, [this, &dens, pos](const std::array<int, 3> node, double weight) {
+          // Nodes with zero weight might not be accessible, because they can be
+          // outside ghost layers
+          if (weight != 0) {
+            auto res =
+                get_node_density(Utils::Vector3i{{node[0], node[1], node[2]}});
+            if (!res) {
+              printf("Pos: %g %g %g, Node %d %d %d, weight %g\n", pos[0],
+                     pos[1], pos[2], node[0], node[1], node[2], weight);
+              throw std::runtime_error("Access to LB density field failed.");
+            }
+            dens += *res * weight;
+          }
+        });
+    return {dens};
   };
 
   // Local force
@@ -880,7 +888,7 @@ public:
     const typename UBB::Velocity velocity(real_c(v[0]), real_c(v[1]),
                                           real_c(v[2]));
 
-    Boundaries *boundary_handling =
+    auto *boundary_handling =
         (*bc).block->template getData<Boundaries>(m_boundary_handling_id);
     boundary_handling->forceBoundary(UBB_flag, bc->cell[0], bc->cell[1],
                                      bc->cell[2], velocity);
@@ -912,7 +920,7 @@ public:
     auto bc = get_block_and_cell(node, true, m_blocks, n_ghost_layers());
     if (!bc)
       return false;
-    Boundaries *boundary_handling =
+    auto *boundary_handling =
         (*bc).block->template getData<Boundaries>(m_boundary_handling_id);
     boundary_handling->removeBoundary((*bc).cell[0], (*bc).cell[1],
                                       (*bc).cell[2]);
@@ -926,7 +934,7 @@ public:
     if (!bc)
       return {boost::none};
 
-    Boundaries *boundary_handling =
+    auto *boundary_handling =
         (*bc).block->template getData<Boundaries>(m_boundary_handling_id);
     return {boundary_handling->isBoundary((*bc).cell)};
   };
@@ -936,7 +944,7 @@ public:
             m_blocks->begin()->getAABB().getExtended(real_c(n_ghost_layers())));
     for (auto block = m_blocks->begin(); block != m_blocks->end(); ++block) {
 
-      Boundaries *boundary_handling =
+      auto *boundary_handling =
           block->template getData<Boundaries>(m_boundary_handling_id);
 
       CellInterval domain_bb(domain_bb_in_global_cell_coordinates);

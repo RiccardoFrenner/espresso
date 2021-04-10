@@ -95,7 +95,7 @@ void force_calc(CellStructure &cell_structure, double time_step) {
   auto particles = cell_structure.local_particles();
   auto ghost_particles = cell_structure.ghost_particles();
 #ifdef ELECTROSTATICS
-  iccp3m_iteration(particles, cell_structure.ghost_particles());
+  icc_iteration(particles, cell_structure.ghost_particles());
 #endif
   init_forces(particles, time_step);
 
@@ -129,7 +129,7 @@ void force_calc(CellStructure &cell_structure, double time_step) {
           detect_collision(p1, p2, d.dist2);
 #endif
       },
-      maximal_cutoff(),
+      maximal_cutoff(), maximal_cutoff_bonded(),
       VerletCriterion{skin, interaction_range(), coulomb_cutoff, dipole_cutoff,
                       collision_detection_cutoff()});
 

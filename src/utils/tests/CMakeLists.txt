@@ -45,6 +45,8 @@ unit_test(NAME make_lin_space_test SRC make_lin_space_test.cpp DEPENDS
 unit_test(NAME sampling_test SRC sampling_test.cpp DEPENDS EspressoUtils)
 unit_test(NAME coordinate_transformation_test SRC coordinate_transformation.cpp
           DEPENDS EspressoUtils)
+unit_test(NAME cylindrical_transformation_test SRC
+          cylindrical_transformation.cpp DEPENDS EspressoUtils)
 unit_test(NAME rotation_matrix_test SRC rotation_matrix_test.cpp DEPENDS
           EspressoUtils)
 unit_test(NAME quaternion_test SRC quaternion_test.cpp DEPENDS EspressoUtils)
@@ -74,9 +76,9 @@ unit_test(NAME all_compare_test SRC all_compare_test.cpp DEPENDS EspressoUtils
           Boost::mpi MPI::MPI_CXX NUM_PROC 3)
 unit_test(NAME gatherv_test SRC gatherv_test.cpp DEPENDS EspressoUtils
           Boost::mpi MPI::MPI_CXX NUM_PROC 3)
-unit_test(NAME all_gatherv_test SRC all_gatherv_test.cpp DEPENDS EspressoUtils
-          Boost::mpi MPI::MPI_CXX)
 unit_test(NAME sendrecv_test SRC sendrecv_test.cpp DEPENDS EspressoUtils
           Boost::mpi MPI::MPI_CXX EspressoUtils NUM_PROC 3)
 unit_test(NAME matrix_test SRC matrix_test.cpp DEPENDS EspressoUtils
           Boost::serialization NUM_PROC 1)
+unit_test(NAME orthonormal_vec_test SRC orthonormal_vec_test.cpp DEPENDS
+          EspressoUtils Boost::serialization NUM_PROC 1)

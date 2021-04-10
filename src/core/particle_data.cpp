@@ -1021,14 +1021,6 @@ void mpi_rescale_particles(int dir, double scale) {
  *  @param _delete if true, delete the exclusion instead of add
  */
 void local_change_exclusion(int part1, int part2, int _delete) {
-  if (part1 == -1 && part2 == -1) {
-    for (auto &p : cell_structure.local_particles()) {
-      p.exclusions().clear();
-    }
-
-    return;
-  }
-
   /* part1, if here */
   auto part = cell_structure.get_local_particle(part1);
   if (part) {
@@ -1087,8 +1079,6 @@ int change_exclusion(int part1, int part2, int _delete) {
   }
   return ES_ERROR;
 }
-
-void remove_all_exclusions() { mpi_send_exclusion(-1, -1, 1); }
 
 void auto_exclusions(int distance) {
   /* partners is a list containing the currently found excluded particles for
@@ -1152,39 +1142,49 @@ void init_type_map(int type) {
   if (type < 0)
     throw std::runtime_error("Types may not be negative");
 
-  // fill particle map
-  if (particle_type_map.count(type) == 0)
-    particle_type_map[type] = std::unordered_set<int>();
-
+  auto &map_for_type = particle_type_map[type];
+  map_for_type.clear();
   for (auto const &p : partCfg()) {
     if (p.p.type == type)
-      particle_type_map.at(type).insert(p.p.identity);
+      map_for_type.insert(p.p.identity);
   }
 }
 
 void remove_id_from_map(int part_id, int type) {
-  if (particle_type_map.find(type) != particle_type_map.end())
-    particle_type_map.at(type).erase(part_id);
+  auto it = particle_type_map.find(type);
+  if (it != particle_type_map.end())
+    it->second.erase(part_id);
 }
 
 int get_random_p_id(int type, int random_index_in_type_map) {
-  if (random_index_in_type_map + 1 > particle_type_map.at(type).size())
-    throw std::runtime_error("The provided index exceeds the number of "
-                             "particle types listed in the particle_type_map");
-  return *std::next(particle_type_map[type].begin(), random_index_in_type_map);
-}
-
-void add_id_to_type_map(int part_id, int type) {
-  if (particle_type_map.find(type) != particle_type_map.end())
-    particle_type_map.at(type).insert(part_id);
-}
-
-int number_of_particles_with_type(int type) {
-  if (particle_type_map.count(type) == 0)
+  auto it = particle_type_map.find(type);
+  if (it == particle_type_map.end()) {
     throw std::runtime_error("The provided particle type " +
                              std::to_string(type) +
                              " is currently not tracked by the system.");
-  return static_cast<int>(particle_type_map.at(type).size());
+  }
+
+  if (random_index_in_type_map + 1 > it->second.size())
+    throw std::runtime_error("The provided index exceeds the number of "
+                             "particle types listed in the particle_type_map");
+  return *std::next(it->second.begin(), random_index_in_type_map);
+}
+
+void add_id_to_type_map(int part_id, int type) {
+  auto it = particle_type_map.find(type);
+  if (it != particle_type_map.end())
+    it->second.insert(part_id);
+}
+
+int number_of_particles_with_type(int type) {
+  auto it = particle_type_map.find(type);
+  if (it == particle_type_map.end()) {
+    throw std::runtime_error("The provided particle type " +
+                             std::to_string(type) +
+                             " is currently not tracked by the system.");
+  }
+
+  return static_cast<int>(it->second.size());
 }
 
 // The following functions are used by the python interface to obtain
