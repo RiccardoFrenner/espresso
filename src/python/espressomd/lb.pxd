@@ -21,6 +21,7 @@ include "myconfig.pxi"
 from libcpp cimport bool
 from libcpp.vector cimport vector
 from libcpp.string cimport string
+from libcpp.utility cimport pair
 from libc cimport stdint
 
 from .actors cimport Actor
@@ -131,11 +132,14 @@ cdef extern from "grid_based_algorithms/lb_interpolation.hpp" namespace "Interpo
 IF LB_WALBERLA:
     cdef extern from "grid_based_algorithms/lb_walberla_instance.hpp":
         cppclass PE_Parameters:
-            PE_Parameters()
-            PE_Parameters(bool use_moving_obstacles, bool sync_shadow_owners, double syncronization_overlap_factor, bool average_force_torque_over_two_timesteps, stdint.uint32_t num_pe_sub_cycles)
-            void add_global_constant_force(const Vector3d & f, const string & name)
+            PE_Parameters() except +
+            PE_Parameters(vector[pair[Vector3d, string]] constant_global_forces) except +
+            PE_Parameters(vector[pair[Vector3d, string]] constant_global_forces, stdint.uint32_t num_pe_sub_cycles) except +
+            PE_Parameters(vector[pair[Vector3d, string]] constant_global_forces, stdint.uint32_t num_pe_sub_cycles, bool sync_shadow_owners) except +
+            PE_Parameters(vector[pair[Vector3d, string]] constant_global_forces, stdint.uint32_t num_pe_sub_cycles, bool sync_shadow_owners, bool average_force_torque_over_two_timesteps) except +
+            PE_Parameters(vector[pair[Vector3d, string]] constant_global_forces, stdint.uint32_t num_pe_sub_cycles, bool sync_shadow_owners, bool average_force_torque_over_two_timesteps, double syncronization_overlap_factor) except +
         void mpi_init_lb_walberla(double viscosity, double density, double agrid, double tau, Vector3d box_size, double kT, unsigned int seed, PE_Parameters pe_params) except +
-        void mpi_init_lb_walberla(double viscosity, double density, double agrid, double tau, double kT, unsigned int seed) except +
+        void mpi_init_lb_walberla(double viscosity, double density, double agrid, double tau, Vector3d box_size, double kT, unsigned int seed) except +
         void mpi_destruct_lb_walberla() except +
 
 

@@ -44,13 +44,12 @@ public:
     return (2 - lm->omega_shear_) / (6 * lm->omega_shear_);
   };
 
-  LBWalberlaD3Q19FluctuatingMRT(double viscosity, double density,
-                                const Utils::Vector3i &n_blocks,
-                                const Utils::Vector3i &n_cells_per_block,
-                                const Utils::Vector3i &n_processes,
-                                int n_ghost_layers, double kT,
-                                unsigned int seed,
-                                const PE_Parameters &peParams = PE_Parameters())
+  LBWalberlaD3Q19FluctuatingMRT(
+      double viscosity, double density, const Utils::Vector3i &n_blocks,
+      const Utils::Vector3i &n_cells_per_block,
+      const Utils::Vector3i &n_processes, int n_ghost_layers, double kT,
+      unsigned int seed,
+      const PE_Parameters &peParams = PE_Parameters::deactivated())
       : LBWalberlaImpl(n_blocks, n_cells_per_block, n_processes, n_ghost_layers,
                        peParams) {
     m_kT = kT;
@@ -58,12 +57,11 @@ public:
     setup_with_valid_lattice_model(density);
   };
 
-  LBWalberlaD3Q19FluctuatingMRT(double viscosity, double density,
-                                const Utils::Vector3i &grid_dimensions,
-                                const Utils::Vector3i &node_grid,
-                                int n_ghost_layers, double kT,
-                                unsigned int seed,
-                                const PE_Parameters &peParams = PE_Parameters())
+  LBWalberlaD3Q19FluctuatingMRT(
+      double viscosity, double density, const Utils::Vector3i &grid_dimensions,
+      const Utils::Vector3i &node_grid, int n_ghost_layers, double kT,
+      unsigned int seed,
+      const PE_Parameters &peParams = PE_Parameters::deactivated())
       : LBWalberlaImpl(viscosity, grid_dimensions, node_grid, n_ghost_layers,
                        peParams) {
     m_kT = kT;

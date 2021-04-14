@@ -413,8 +413,7 @@ IF LB_WALBERLA:
                     "bulk_visc": -1.0,
                     "tau": -1.0,
                     "kT": 0.0,
-                    "seed": 0,
-                    "pe_params": None}
+                    "seed": 0}
 
         def _set_lattice_switch(self):
             raise Exception("This may not be called")
@@ -423,23 +422,31 @@ IF LB_WALBERLA:
             self.validate_params()
 
             # convert pe parameters
-            cdef PE_Parameters pe_params = PE_Parameters()
-            cdef Vector3d const_global_force
-            if self._params['pe_params']:
-                pe_params = PE_Parameters(
-                    self._params['pe_params'][0],
-                    self._params['pe_params'][1],
-                    self._params['pe_params'][2],
-                    self._params['pe_params'][3],
-                    self._params['pe_params'][4],
-                )
-                for force, name in self._params['pe_params'][5]:
+            # example PE_Parameters: ([((0,0,-9.81), "Gravity"), ((0,0,0), "No force")], 1, true, true, 1.5)
+            cdef vector[pair[Vector3d, string]] forces
+            cdef pair[Vector3d, string] p
+            cdef Vector3d f
+            cdef PE_Parameters pe_params
+            if "pe_params" in self._params:
+                for force, name in self._params['pe_params'][0]:
                     for i in range(3):
-                        const_global_force[i] = force[i]
-                    pe_params.add_global_constant_force(
-                        const_global_force,
-                        utils.to_char_pointer(name)
-                    )
+                        f[i] = force[i]
+                    p.first = f
+                    p.second = utils.to_char_pointer(name)
+                    forces.push_back(p)
+                if len(self._params['pe_params']) == 1:
+                    pe_params = PE_Parameters(forces)
+                elif len(self._params['pe_params']) == 2:
+                    pe_params = PE_Parameters(forces, self._params['pe_params'][1])
+                elif len(self._params['pe_params']) == 3:
+                    pe_params = PE_Parameters(forces, self._params['pe_params'][1], self._params['pe_params'][2])
+                elif len(self._params['pe_params']) == 4:
+                    pe_params = PE_Parameters(forces, self._params['pe_params'][1], self._params['pe_params'][2], self._params['pe_params'][3])
+                elif len(self._params['pe_params']) == 5:
+                    pe_params = PE_Parameters(forces, self._params['pe_params'][1], self._params['pe_params'][2], self._params['pe_params'][3], self._params['pe_params'][4])
+                else:
+                    raise ValueError("PE_Parameters only supports <= 5 parameters.")
+
 
             # unit conversion
             lb_visc = self._params["visc"] * \
@@ -447,10 +454,16 @@ IF LB_WALBERLA:
             lb_dens = self._params['dens'] * self._params['agrid']**3
             lb_kT = self._params['kT'] * \
                 self._params['tau']**2 / self._params['agrid']**2
-            mpi_init_lb_walberla(
-                lb_visc, lb_dens, self._params["agrid"], self._params["tau"],
-                box_geo.length(),
-                lb_kT, self._params['seed'], pe_params)
+            if "pe_params" in self._params:
+                mpi_init_lb_walberla(
+                    lb_visc, lb_dens, self._params["agrid"], self._params["tau"],
+                    box_geo.length(),
+                    lb_kT, self._params['seed'], pe_params)
+            else:
+                mpi_init_lb_walberla(
+                    lb_visc, lb_dens, self._params["agrid"], self._params["tau"],
+                    box_geo.length(),
+                    lb_kT, self._params['seed'])
             utils.handle_errors("LB fluid activation")
             self.ext_force_density = self._params["ext_force_density"]
 

@@ -2,46 +2,61 @@
 #define PE_PARAMETERS_H
 
 #include <boost/serialization/access.hpp>
-#include <utils/Vector.hpp>
-
+#include <cstdint>
 #include <utility>
 #include <vector>
 
-struct PE_Parameters {
-  bool use_moving_obstacles = false; // If false other parameters are obsolete
-  bool sync_shadow_owners = true;
+#include <utils/Vector.hpp>
 
-  // pe_sync_overlap = syncronization_overlap_factor * dx
-  // Where dx is the LB cell length
-  double syncronization_overlap_factor = double(1.5);
+class PE_Parameters {
+private:
+  using ForceList = std::vector<std::pair<Utils::Vector3d, std::string>>;
 
-  bool average_force_torque_over_two_timesteps = true;
-  std::size_t num_pe_sub_cycles = 1;
-  std::vector<std::pair<Utils::Vector3d, std::string>> constant_global_forces =
-      {};
+  bool m_use_moving_obstacles; // If false other parameters are obsolete
+  ForceList m_constant_global_forces;
+  std::uint32_t m_num_pe_sub_cycles;
+  bool m_sync_shadow_owners;
+  bool m_average_force_torque_over_two_timesteps;
+  double m_syncronization_overlap_factor; // pe_sync_overlap =
+                                          // m_syncronization_overlap_factor *
+                                          // LB cell length
 
-  PE_Parameters() = default;
-
-  PE_Parameters(bool _use_moving_obstacles, bool _sync_shadow_owners,
-                double _syncronization_overlap_factor,
-                bool _average_force_torque_over_two_timesteps,
-                std::size_t _num_pe_sub_cycles)
-      : use_moving_obstacles(_use_moving_obstacles),
-        sync_shadow_owners(_sync_shadow_owners),
-        syncronization_overlap_factor(_syncronization_overlap_factor),
-        average_force_torque_over_two_timesteps(
+public:
+  PE_Parameters(ForceList _constant_global_forces = {},
+                std::uint32_t _num_pe_sub_cycles = 1,
+                bool _sync_shadow_owners = true,
+                bool _average_force_torque_over_two_timesteps = true,
+                double _syncronization_overlap_factor = 1.5)
+      : m_use_moving_obstacles(true),
+        m_constant_global_forces(std::move(_constant_global_forces)),
+        m_num_pe_sub_cycles(_num_pe_sub_cycles),
+        m_sync_shadow_owners(_sync_shadow_owners),
+        m_average_force_torque_over_two_timesteps(
             _average_force_torque_over_two_timesteps),
-        num_pe_sub_cycles(_num_pe_sub_cycles) {}
-
-  void add_global_constant_force(Utils::Vector3d f, std::string name) {
-    constant_global_forces.emplace_back(std::make_pair(f, name));
+        m_syncronization_overlap_factor(_syncronization_overlap_factor) {}
+  static PE_Parameters deactivated() {
+    PE_Parameters p;
+    p.m_use_moving_obstacles = false;
+    return p;
+  }
+  bool is_activated() const { return m_use_moving_obstacles; }
+  ForceList const &get_constant_global_forces() const {
+    return m_constant_global_forces;
+  }
+  std::uint32_t get_num_pe_sub_cycles() const { return m_num_pe_sub_cycles; }
+  bool get_sync_shadow_owners() const { return m_sync_shadow_owners; }
+  bool get_average_force_torque_over_two_timesteps() const {
+    return m_average_force_torque_over_two_timesteps;
+  }
+  double get_syncronization_overlap_factor() const {
+    return m_syncronization_overlap_factor;
   }
 
 private:
   friend boost::serialization::access;
   template <typename Archive>
   void serialize(Archive &ar, const unsigned int /* version */) {
-    ar &use_moving_obstacles;
+    ar &m_use_moving_obstacles;
   }
 };
 

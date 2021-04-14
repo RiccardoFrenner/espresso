@@ -35,6 +35,58 @@
 
 namespace walberla {
 
+class BlockStructureHelper {
+private:
+  Utils::Vector3i m_block_shape;
+  Utils::Vector3i m_grid_shape;
+  Utils::Vector3i m_mpi_shape;
+
+  void check_block_grid_compatibility(Utils::Vector3i block_shape,
+                                      Utils::Vector3i grid_shape) {
+    for (int i : {0, 1, 2}) {
+      if (grid_shape[i] % block_shape[i] != 0) {
+        throw std::runtime_error(
+            "LB grid dimensions and mpi node grid are not compatible.");
+      }
+    }
+  }
+
+  void check_block_mpi_compatibility(Utils::Vector3i block_shape,
+                                     Utils::Vector3i mpi_shape) {
+    for (int i : {0, 1, 2}) {
+      if (block_shape[i] % mpi_shape[i] != 0) {
+        throw std::runtime_error(
+            "LB block shape and mpi node grid are not compatible.");
+      }
+    }
+  }
+
+public:
+  Utils::Vector3i get_block_shape() { return m_block_shape; }
+  Utils::Vector3i get_grid_shape() { return m_grid_shape; }
+  Utils::Vector3i get_mpi_shape() { return m_mpi_shape; }
+  Utils::Vector3i get_n_cells_per_block() {
+    return {m_grid_shape[0] / m_block_shape[0],
+            m_grid_shape[1] / m_block_shape[1],
+            m_grid_shape[2] / m_block_shape[2]};
+  }
+
+  BlockStructureHelper(Utils::Vector3i grid_shape, Utils::Vector3i mpi_shape) {
+    check_block_grid_compatibility(mpi_shape, grid_shape);
+    m_block_shape = mpi_shape;
+    m_grid_shape = grid_shape;
+    m_mpi_shape = mpi_shape;
+  }
+  BlockStructureHelper(Utils::Vector3i block_shape, Utils::Vector3i grid_shape,
+                       Utils::Vector3i mpi_shape) {
+    check_block_mpi_compatibility(block_shape, mpi_shape);
+    check_block_grid_compatibility(block_shape, grid_shape);
+    m_block_shape = block_shape;
+    m_grid_shape = grid_shape;
+    m_mpi_shape = mpi_shape;
+  }
+};
+
 // Vector conversion helpers
 inline Utils::Vector3d to_vector3d(const Vector3<real_t> v) {
   return Utils::Vector3d{double_c(v[0]), double_c(v[1]), double_c(v[2])};

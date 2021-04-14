@@ -27,10 +27,10 @@
 /** @brief Initialize Walberla's MPI manager */
 void walberla_mpi_init();
 
-LBWalberlaBase *new_lb_walberla(double viscosity, double density,
-                                const Utils::Vector3i &grid_dimensions,
-                                const Utils::Vector3i &node_grid, double kT,
-                                unsigned int seed,
-                                PE_Parameters pe_params = PE_Parameters());
+LBWalberlaBase *
+new_lb_walberla(double viscosity, double density,
+                const Utils::Vector3i &grid_dimensions,
+                const Utils::Vector3i &node_grid, double kT, unsigned int seed,
+                PE_Parameters pe_params = PE_Parameters::deactivated());
 
 #endif
