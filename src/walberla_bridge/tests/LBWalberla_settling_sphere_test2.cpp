@@ -47,12 +47,11 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
   bool shortrun = false;
   bool func_test = false;
   bool file_io = true;
-  std::string base_folder = "vtk_out_SettlingSphere";
+  std::string base_folder = "vtk_out_SettlingSphere2";
   uint_t fluid_type = 4;
 
   // numerical parameters
-  // uint_t n_horizontal_cells = 100; // Original value
-  uint_t n_horizontal_cells = 90;
+  constexpr uint_t n_horizontal_cells = 100; // Original value
   bool average_force_torque_over_two_timesteps = true;
 
   if (func_test) {
@@ -73,79 +72,49 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
   //////////////////////////////////////
 
   // values are mainly taken from the reference paper
-  const double diameter_SI = 15e-3;
-  const double density_sphere_SI = 1120;
+  constexpr double diameter_SI = 15e-3;
+  constexpr double density_sphere_SI = 1120;
 
-  double density_fluid_SI, dynamic_viscosity_fluid_SI;
-  double expected_settling_velocity_SI;
-  switch (fluid_type) {
-  case 1:
-    // Re_p around 1.5
-    density_fluid_SI = 970;
-    dynamic_viscosity_fluid_SI = 373e-3;
-    expected_settling_velocity_SI = 0.035986;
-    break;
-  case 2:
-    // Re_p around 4.1
-    density_fluid_SI = 965;
-    dynamic_viscosity_fluid_SI = 212e-3;
-    expected_settling_velocity_SI = 0.05718;
-    break;
-  case 3:
-    // Re_p around 11.6
-    density_fluid_SI = 962;
-    dynamic_viscosity_fluid_SI = 113e-3;
-    expected_settling_velocity_SI = 0.087269;
-    break;
-  case 4:
-    // Re_p around 31.9
-    density_fluid_SI = 960;
-    dynamic_viscosity_fluid_SI = 58e-3;
-    expected_settling_velocity_SI = 0.12224;
-    break;
-  default:
-    throw std::runtime_error(
-        "Only four different fluids are supported! Choose type "
-        "between 1 and 4.");
-  }
-  const double kinematic_viscosity_fluid_SI =
+  constexpr double density_fluid_SI = 960;
+  constexpr double dynamic_viscosity_fluid_SI = 58e-3;
+  constexpr double expected_settling_velocity_SI = 0.12224;
+  constexpr double kinematic_viscosity_fluid_SI =
       dynamic_viscosity_fluid_SI / density_fluid_SI;
 
-  const double gravitational_acceleration_SI = 9.81;
-  // Vector3d domain_size_SI{100e-3, 100e-3, 160e-3}; // Original values
-  Vector3d domain_size_SI{90e-3, 90e-3, 150e-3};
+  constexpr double gravitational_acceleration_SI = 9.81;
+  constexpr Vector3d domain_size_SI{100e-3, 100e-3, 160e-3}; // Original values
   // shift starting gap a bit upwards to match the reported (plotted) values
-  const double starting_gap_size_SI = 120e-3 + 0.25 * diameter_SI;
+  constexpr double starting_gap_size_SI = 120e-3 + 0.25 * diameter_SI;
 
   //////////////////////////
   // NUMERICAL PARAMETERS //
   //////////////////////////
 
-  const double dx_SI = domain_size_SI[0] / double(n_horizontal_cells);
+  constexpr double dx_SI = domain_size_SI[0] / double(n_horizontal_cells);
   const Vector3i domain_size{int(floor(domain_size_SI[0] / dx_SI + 0.5)),
                              int(floor(domain_size_SI[1] / dx_SI + 0.5)),
                              int(floor(domain_size_SI[2] / dx_SI + 0.5))};
-  const double diameter = diameter_SI / dx_SI;
-  const double sphere_volume =
+  constexpr double diameter = diameter_SI / dx_SI;
+  constexpr double sphere_volume =
       walberla::math::pi / 6.0 * diameter * diameter * diameter;
 
-  const double expected_settling_velocity = 0.01;
-  const double dt_SI =
+  constexpr double expected_settling_velocity = 0.01;
+  constexpr double dt_SI =
       expected_settling_velocity / expected_settling_velocity_SI * dx_SI;
 
-  const double viscosity =
+  constexpr double viscosity =
       kinematic_viscosity_fluid_SI * dt_SI / (dx_SI * dx_SI);
   const double relaxation_time =
       1.0 / walberla::lbm::collision_model::omegaFromViscosity(viscosity);
 
-  const double gravitational_acceleration =
+  constexpr double gravitational_acceleration =
       gravitational_acceleration_SI * dt_SI * dt_SI / dx_SI;
 
-  const double density_fluid = 1.0;
-  const double density_sphere =
+  constexpr double density_fluid = 1.0;
+  constexpr double density_sphere =
       density_fluid * density_sphere_SI / density_fluid_SI;
 
-  const double dx = 1.0;
+  constexpr double dx = 1.0;
 
   const uint_t timesteps = func_test ? 1 : (shortrun ? 200 : 250000);
   const uint_t num_pe_sub_cycles = 1;
@@ -154,7 +123,7 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
   // BLOCK STRUCTURE SETUP //
   ///////////////////////////
 
-  Vector3i n_blocks_per_direction{3, 3, 3};
+  constexpr Vector3i n_blocks_per_direction{5, 5, 8};
   Vector3i n_cells_per_block_per_direction{
       domain_size[0] / n_blocks_per_direction[0],
       domain_size[1] / n_blocks_per_direction[1],
@@ -166,7 +135,7 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
         "Unmatching domain decomposition in direction " << i << "!");
   }
 
-  const double overlap = 1.5 * dx;
+  constexpr double overlap = 1.5 * dx;
   const bool sync_shadow_owners = true;
   Vector3d initial_position{0.5 * double(domain_size[0]),
                             0.5 * double(domain_size[1]),
@@ -180,7 +149,7 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
                               << logging_file_name << "\"");
   }
 
-  Vector3d gravitational_force{0, 0,
+  constexpr Vector3d gravitational_force{0, 0,
                                -(density_sphere - density_fluid) *
                                    gravitational_acceleration * sphere_volume};
 
@@ -230,7 +199,10 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
     WALBERLA_ROOT_SECTION() {
       std::ofstream file;
       file.open(logging_file_name.c_str());
-      file << "#\t t\t posX\t posY\t gapZ\t velX\t velY\t velZ\n";
+      file << "#\t t\t posX\t posY\t gapZ\t velX\t velY\t velZ\t forceX\t "
+              "forceY\t forceZ\t fluidmomX\t "
+              "fluidmomY\t fluidmomZ\t particlemomX\t particlemomY\t "
+              "particlemomZ\n";
       file.close();
     }
   }
@@ -246,9 +218,6 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
   double max_velocity = 0.0;
   for (uint_t i = 0; i < timesteps; ++i) {
     WALBERLA_LOG_INFO_ON_ROOT("Timestep " << i << ": ");
-    if (i == 16) {
-      WALBERLA_LOG_INFO_ON_ROOT("AUFPASSEN");
-    }
     // perform a single simulation step
     lb->integrate();
 
@@ -259,6 +228,11 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
     pos = p ? *p : Vector3d{0, 0, 0};
     vel = v ? *v : Vector3d{0, 0, 0};
     force = f ? *f : Vector3d{0, 0, 0};
+    if (f) {
+      auto ff = *f;
+      WALBERLA_LOG_INFO("Force = (" << ff[0] << ", " << ff[1] << ", " << ff[2]
+                                    << ")");
+    }
     MPI_Allreduce(MPI_IN_PLACE, &pos[0], 1, MPI_DOUBLE, MPI_SUM,
                   MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, &pos[1], 1, MPI_DOUBLE, MPI_SUM,

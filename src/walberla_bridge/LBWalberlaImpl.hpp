@@ -31,6 +31,7 @@
 #include "blockforest/communication/UniformBufferedScheme.h"
 #include "boundary/BoundaryHandling.h"
 #include "core/SharedFunctor.h"
+#include "core/math/Vector3.h"
 #include "field/GhostLayerField.h"
 #include "field/adaptors/GhostLayerFieldAdaptor.h"
 #include "field/vtk/FlagFieldCellFilter.h"
@@ -41,6 +42,7 @@
 #include "timeloop/SweepTimeloop.h"
 
 #include "pe/basic.h"
+#include "pe/rigidbody/BodyIterators.h"
 #include "pe/rigidbody/BodyStorage.h"
 #include "pe/statistics/BodyStatistics.h"
 #include "pe/utility/DestroyBody.h"
@@ -80,6 +82,7 @@
 #include "walberla_utils.hpp"
 
 #include <cassert>
+#include <mpi.h>
 #include <utility>
 #include <utils/Vector.hpp>
 #include <utils/interpolation/bspline_3d.hpp>
@@ -224,6 +227,7 @@ protected:
   std::map<std::uint64_t, Vector3<real_t>> m_particle_forces;
   std::map<std::uint64_t, Vector3<real_t>> m_particle_torques;
   std::function<void(void)> m_save_force_torque;
+  std::function<void(void)> m_debug_timeloop_helper;
 
   bool m_is_pe_initialized;
   std::function<void(void)> m_pe_sync_call;
@@ -276,7 +280,7 @@ protected:
   }; // class LBBoundaryHandling
 
 private:
-  bool using_moving_obstacles() { return m_pe_parameters.use_moving_obstacles; }
+  bool using_moving_obstacles() { return m_pe_parameters.is_activated(); }
 
   bool is_pe_initialized() { return m_is_pe_initialized; }
 
@@ -302,12 +306,13 @@ private:
 
   void init_pe_fields() {
     // add body field
+    // TODO: use field::fzyx ???
     m_body_field_id = field::addToStorage<BodyField>(m_blocks, "body field",
                                                      nullptr, field::zyxf);
   }
 
   void init_body_synchronization() {
-    if (!m_pe_parameters.sync_shadow_owners) {
+    if (!m_pe_parameters.get_sync_shadow_owners()) {
       m_pe_sync_call = std::bind(
           pe::syncNextNeighbors<BodyTypeTuple>,
           std::ref(m_blocks->getBlockForest()), m_body_storage_id,
@@ -341,7 +346,7 @@ private:
     // The following briefly describes the steps of the timeloop.
     // Expressions in brackets only appear when using moving obstacles.
     // - sweep: Reset force fields
-    // - sweep: MO Boundary Handling
+    // - sweep: Boundary Handling
     // - sweep: LB stream & collide
     // - (sweep: Body Mapping)
     // - (sweep: PDF Restore)
@@ -372,11 +377,15 @@ private:
         typename LatticeModel::Sweep(m_pdf_field_id), "LB stream & collide");
 
     if (using_moving_obstacles()) {
+      // todo: remove
+      m_time_loop->addFuncAfterTimeStep(m_debug_timeloop_helper,
+                                        "Debug helper");
+
       // Averaging the force/torque over two time steps is said to damp
       // oscillations of the interaction force/torque. See Ladd - " Numerical
       // simulations of particulate suspensions via a discretized Boltzmann
       // equation. Part 1. Theoretical foundation", 1994, p. 302
-      if (m_pe_parameters.average_force_torque_over_two_timesteps) {
+      if (m_pe_parameters.get_average_force_torque_over_two_timesteps()) {
         // store force/torque from hydrodynamic interactions in container1
         m_time_loop->addFuncAfterTimeStep(m_store_force_torque_in_cont_1,
                                           "Force storing");
@@ -400,6 +409,10 @@ private:
                 m_bodies_force_torque_container_1,
                 m_bodies_force_torque_container_2),
             "Swap FT container");
+
+        // todo: remove
+        m_time_loop->addFuncAfterTimeStep(m_debug_timeloop_helper,
+                                          "Debug helper");
       }
 
       // save force/torque before overriden by global force or reset by pe step
@@ -407,7 +420,7 @@ private:
                                         "Save force/torque");
 
       // add constant global forces
-      for (auto &&t : m_pe_parameters.constant_global_forces) {
+      for (auto &&t : m_pe_parameters.get_constant_global_forces()) {
         m_time_loop->addFuncAfterTimeStep(
             pe_coupling::ForceOnBodiesAdder(m_blocks, m_body_storage_id,
                                             to_vector3(t.first)),
@@ -417,7 +430,7 @@ private:
       m_time_loop->addFuncAfterTimeStep(
           pe_coupling::TimeStep(m_blocks, m_body_storage_id, *m_cr,
                                 m_pe_sync_call, real_t(1),
-                                m_pe_parameters.num_pe_sub_cycles),
+                                m_pe_parameters.get_num_pe_sub_cycles()),
           "pe Time Step");
 
       // sweep for updating the pe body mapping into the LBM simulation
@@ -472,22 +485,90 @@ private:
     // set up body synchronization procedure
     init_body_synchronization();
 
-    if (m_pe_parameters.average_force_torque_over_two_timesteps) {
+    if (m_pe_parameters.get_average_force_torque_over_two_timesteps()) {
       init_particle_force_averaging();
     }
 
-    // define function for saving force/torque before reset through pe time step
+    // define function for saving force/torque before reset due to pe time step
     m_save_force_torque = [this]() {
+      m_particle_forces.clear();
+      m_particle_torques.clear();
+
+      // keep copies of forces/torques to not restore them after the force
+      // reduction
+      using BlockID_T = domain_decomposition::IBlockID::IDType;
+      std::map<BlockID_T, std::map<walberla::id_t, std::array<real_t, 6>>>
+          forceTorqueMap;
+      for (auto blockIt = m_blocks->begin(); blockIt != m_blocks->end();
+           ++blockIt) {
+        BlockID_T blockID = blockIt->getId().getID();
+        auto &blockLocalForceTorqueMap = forceTorqueMap[blockID];
+
+        // iterate over local and remote bodies and store force/torque in map
+        for (auto bodyIt = pe::BodyIterator::begin(*blockIt, m_body_storage_id);
+             bodyIt != pe::BodyIterator::end(); ++bodyIt) {
+          auto &f = blockLocalForceTorqueMap[bodyIt->getSystemID()];
+
+          const auto &force = bodyIt->getForce();
+          const auto &torque = bodyIt->getTorque();
+
+          f = {{force[0], force[1], force[2], torque[0], torque[1], torque[2]}};
+        }
+      }
+
+      // force reduction on all mpi ranks
+      pe::reduceForces(m_blocks->getBlockStorage(), m_body_storage_id,
+                       *m_global_body_storage);
+
+      // Save reduced forces/torques in maps
+      for (auto blockIt = m_blocks->begin(); blockIt != m_blocks->end();
+           ++blockIt) {
+        for (auto bodyIt = pe::BodyIterator::begin(*blockIt, m_body_storage_id);
+             bodyIt != pe::BodyIterator::end(); ++bodyIt) {
+
+          m_particle_forces[bodyIt->getID()] = bodyIt->getForce();
+          m_particle_torques[bodyIt->getID()] = bodyIt->getTorque();
+        }
+      }
+
+      // re-set forces to their original values before reduction
+      for (auto blockIt = m_blocks->begin(); blockIt != m_blocks->end();
+           ++blockIt) {
+        BlockID_T blockID = blockIt->getId().getID();
+        auto &blockLocalForceTorqueMap = forceTorqueMap[blockID];
+
+        for (auto bodyIt = pe::BodyIterator::begin(*blockIt, m_body_storage_id);
+             bodyIt != pe::BodyIterator::end(); ++bodyIt) {
+
+          const auto f = blockLocalForceTorqueMap.find(bodyIt->getSystemID());
+
+          if (f != blockLocalForceTorqueMap.end()) {
+            const auto &ftValues = f->second;
+            bodyIt->setForce(
+                Vector3<real_t>{ftValues[0], ftValues[1], ftValues[2]});
+            bodyIt->setTorque(
+                Vector3<real_t>{ftValues[3], ftValues[4], ftValues[5]});
+          }
+        }
+      }
+    };
+
+    // todo: remove
+    m_debug_timeloop_helper = [this]() {
       for (auto blockIt = m_blocks->begin(); blockIt != m_blocks->end();
            ++blockIt) {
 
         for (auto bodyIt = pe::BodyIterator::begin(*blockIt, m_body_storage_id);
              bodyIt != pe::BodyIterator::end(); ++bodyIt) {
 
-          auto const &force = bodyIt->getForce();
-          auto const &torque = bodyIt->getTorque();
-          m_particle_forces[bodyIt->getID()] = force;
-          m_particle_torques[bodyIt->getID()] = torque;
+          auto a1 = bodyIt->getForce();
+          auto a2 = bodyIt->getTorque();
+          auto a3 = bodyIt->getID();
+          auto a4 = bodyIt->getAngularVel();
+          auto a5 = bodyIt->getLinearVel();
+          auto a6 = bodyIt->hasManager();
+          auto a7 = bodyIt->getManager();
+          auto a8 = bodyIt->checkInvariants();
         }
       }
     };
@@ -505,6 +586,23 @@ private:
     // Init and register flag field (fluid/boundary)
     m_flag_field_id = field::addFlagFieldToStorage<FlagField>(
         m_blocks, "flag field", m_n_ghost_layers);
+  }
+
+  void debug_print_block_setup() {
+    printf("------------------------------------------------------\n");
+    printf("getProcess(): %lu\n", m_blocks->getProcess());
+    printf("get*Size(): %lu %lu %lu\n", m_blocks->getXSize(),
+           m_blocks->getYSize(), m_blocks->getZSize());
+    printf("getNumberOfBlocks(): %lu\n", m_blocks->getNumberOfBlocks());
+    printf("getNumberOf*CellsPerBlock(): %lu %lu %lu\n",
+           m_blocks->getNumberOfXCellsPerBlock(),
+           m_blocks->getNumberOfYCellsPerBlock(),
+           m_blocks->getNumberOfZCellsPerBlock());
+    printf("grid_dimension: %lu %lu %lu\n", m_blocks->getNumberOfXCells(),
+           m_blocks->getNumberOfYCells(), m_blocks->getNumberOfZCells());
+    printf("Periodicity: %d %d %d\n", m_blocks->isXPeriodic(),
+           m_blocks->isYPeriodic(), m_blocks->isZPeriodic());
+    printf("------------------------------------------------------\n");
   }
 
   void init_blockforest(Utils::Vector3i const &n_blocks,
@@ -536,15 +634,21 @@ private:
         uint_c(n_processes[1]),       // cpus in y direction
         uint_c(n_processes[2]),       // cpus in z direction
         true, true, true);            // periodicity
+
+    debug_print_block_setup();
   }
 
 public:
   LBWalberlaImpl(Utils::Vector3i const &n_blocks,
                  Utils::Vector3i const &n_cells_per_block,
                  Utils::Vector3i const &n_processes, int n_ghost_layers,
-                 PE_Parameters pe_params = PE_Parameters())
+                 PE_Parameters pe_params = PE_Parameters::deactivated())
       : m_n_ghost_layers(n_ghost_layers),
         m_pe_parameters(std::move(pe_params)) {
+
+    m_grid_dimensions = Utils::Vector3i{n_blocks[0] * n_cells_per_block[0],
+                                        n_blocks[1] * n_cells_per_block[1],
+                                        n_blocks[2] * n_cells_per_block[2]};
 
     if (m_n_ghost_layers <= 0)
       throw std::runtime_error("At least one ghost layer must be used");
@@ -559,8 +663,8 @@ public:
     // https://www.walberla.net/doxygen/group__pe__coupling.html#reconstruction
     // for more information
     double const lattice_grid_spacing = 1.0; // aka. `Lattice constant` above
-    m_pe_sync_overlap =
-        m_pe_parameters.syncronization_overlap_factor * lattice_grid_spacing;
+    m_pe_sync_overlap = m_pe_parameters.get_syncronization_overlap_factor() *
+                        lattice_grid_spacing;
 
     // Init body statistics
     // m_bodyStats =
@@ -570,7 +674,7 @@ public:
 
   LBWalberlaImpl(double viscosity, const Utils::Vector3i &grid_dimensions,
                  const Utils::Vector3i &node_grid, int n_ghost_layers,
-                 PE_Parameters pe_params = PE_Parameters())
+                 PE_Parameters pe_params = PE_Parameters::deactivated())
       : m_pe_parameters(std::move(pe_params)) {
     m_grid_dimensions = grid_dimensions;
     m_n_ghost_layers = n_ghost_layers;
@@ -598,8 +702,8 @@ public:
     // https://www.walberla.net/doxygen/group__pe__coupling.html#reconstruction
     // for more information
     double const lattice_grid_spacing = 1.0; // aka. `Lattice constant` above
-    m_pe_sync_overlap =
-        m_pe_parameters.syncronization_overlap_factor * lattice_grid_spacing;
+    m_pe_sync_overlap = m_pe_parameters.get_syncronization_overlap_factor() *
+                        lattice_grid_spacing;
   };
 
   void setup_with_valid_lattice_model(double density) {
@@ -696,8 +800,8 @@ public:
     Utils::Vector3d v{0.0, 0.0, 0.0};
     interpolate_bspline_at_pos(
         pos, [this, &v, pos](const std::array<int, 3> node, double weight) {
-          // Nodes with zero weight might not be accessible, because they can be
-          // outside ghost layers
+          // Nodes with zero weight might not be accessible, because they can
+          // be outside ghost layers
           if (weight != 0) {
             auto res = get_node_velocity(
                 Utils::Vector3i{{node[0], node[1], node[2]}}, true);
@@ -1189,6 +1293,29 @@ public:
     }
     m_pe_sync_call();
   }
+
+  boost::optional<double> get_particle_mass(std::uint64_t uid) const override {
+    pe::BodyID p = get_particle(uid);
+    if (p != nullptr) {
+      return {p->getMass()};
+    }
+    return {};
+  }
+
+  void set_particle_velocity(std::uint64_t uid,
+                             Utils::Vector3d const &v) override {
+    pe::BodyID p = get_particle(uid);
+    if (p != nullptr) {
+      p->setLinearVel(to_vector3(v));
+    }
+  }
+  void add_particle_velocity(std::uint64_t uid,
+                             Utils::Vector3d const &v) override {
+    pe::BodyID p = get_particle(uid);
+    if (p != nullptr) {
+      p->setLinearVel(to_vector3(v) + p->getLinearVel());
+    }
+  }
   boost::optional<Utils::Vector3d>
   get_particle_velocity(std::uint64_t uid) const override {
     pe::BodyID p = get_particle(uid);
@@ -1196,6 +1323,20 @@ public:
       return {to_vector3d(p->getLinearVel())};
     }
     return {};
+  }
+  void set_particle_angular_velocity(std::uint64_t uid,
+                                     Utils::Vector3d const &w) override {
+    pe::BodyID p = get_particle(uid);
+    if (p != nullptr) {
+      p->setAngularVel(to_vector3(w));
+    }
+  }
+  void add_particle_angular_velocity(std::uint64_t uid,
+                                     Utils::Vector3d const &w) override {
+    pe::BodyID p = get_particle(uid);
+    if (p != nullptr) {
+      p->setAngularVel(to_vector3(w) + p->getAngularVel());
+    }
   }
   boost::optional<Utils::Vector3d>
   get_particle_angular_velocity(std::uint64_t uid) const override {
@@ -1245,6 +1386,7 @@ public:
       return false;
 
     p->setForce(to_vector3(f));
+    m_particle_forces[uid] = to_vector3(f);
     return true;
   }
   bool add_particle_force(std::uint64_t uid,
@@ -1254,6 +1396,7 @@ public:
       return false;
 
     p->addForce(to_vector3(f));
+    m_particle_forces[uid] += to_vector3(f);
     return true;
   }
   bool set_particle_torque(std::uint64_t uid,
@@ -1263,6 +1406,7 @@ public:
       return false;
 
     p->setTorque(to_vector3(tau));
+    m_particle_torques[uid] = to_vector3(tau);
     return true;
   }
   bool add_particle_torque(std::uint64_t uid,
@@ -1272,6 +1416,7 @@ public:
       return false;
 
     p->addTorque(to_vector3(tau));
+    m_particle_torques[uid] += to_vector3(tau);
     return true;
   }
 
@@ -1297,9 +1442,14 @@ public:
     }
     sync_particles();
     map_particles_to_lb_grid();
-    if (m_pe_parameters.average_force_torque_over_two_timesteps) {
+    if (m_pe_parameters.get_average_force_torque_over_two_timesteps()) {
       m_bodies_force_torque_container_2->store();
     }
+  }
+
+  std::vector<std::pair<Utils::Vector3d, std::string>>
+  get_external_particle_forces() const override {
+    return m_pe_parameters.get_constant_global_forces();
   }
 
   ~LBWalberlaImpl() override = default;

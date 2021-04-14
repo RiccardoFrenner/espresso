@@ -17,99 +17,194 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <boost/test/tools/old/interface.hpp>
+#include <cstdint>
 #define BOOST_TEST_MODULE Walberla pe setters and getters test
 #define BOOST_TEST_DYN_LINK
-
 #include "config.hpp"
 
 #ifdef LB_WALBERLA
+
 #define BOOST_TEST_NO_MAIN
 
+#include <boost/test/data/monomorphic.hpp>
+#include <boost/test/data/test_case.hpp>
 #include <boost/test/unit_test.hpp>
 
-#include <LBWalberlaD3Q19MRT.hpp>
-#include <lb_walberla_init.hpp>
-
 #include <memory>
+#include <vector>
+
+#include "PE_Parameters.hpp"
+#include "tests_common.hpp"
+#include "utils/Vector.hpp"
+#include <lb_walberla_init.hpp>
 
 using Utils::Vector3d;
 using Utils::Vector3i;
-using walberla::LBWalberlaD3Q19MRT;
-using uint_t = std::size_t;
 
-constexpr double viscosity = 0.4;
-constexpr Vector3d box_dimensions = {6, 6, 9};
-constexpr double agrid = 0.5;
-constexpr Vector3i grid_dimensions{int(box_dimensions[0] / agrid),
-                                   int(box_dimensions[1] / agrid),
-                                   int(box_dimensions[2] / agrid)};
-constexpr double tau = 0.34;
-constexpr double density = 2.5;
-Vector3i mpi_shape;
-constexpr unsigned int seed = 3;
-constexpr double kT = 0.0014;
+namespace bdata = boost::unit_test::data;
 
-BOOST_AUTO_TEST_CASE(add_particle_inside_domain) {
-  PE_Parameters peParams(true, true, 1.5, true, 1);
-  auto lb = std::make_shared<LBWalberlaD3Q19MRT>(
-      viscosity, density, grid_dimensions, mpi_shape, 1, peParams);
+LBTestParameters params; // populated in main()
+Vector3i mpi_shape;      // populated in main()
 
-  // Create particle
-  std::uint64_t uid = 12;
-  double radius = 0.1;
-  Vector3d global_pos{0, 0, 0};
-  Vector3d linear_vel{1.0, 0.2, 0.1};
-  lb->add_particle(uid, global_pos, radius, linear_vel);
+// BOOST_AUTO_TEST_CASE(add_particle_inside_domain) {
+//   auto lb = std::make_shared<LBWalberlaD3Q19MRT>(
+//       viscosity, density, grid_dimensions, mpi_shape, 1, PE_Parameters());
 
-  // Add force/torque
-  Vector3d force{0.1, 0.5, 0.22};
-  Vector3d torque{0.5, 0.1, 0.324};
-  lb->set_particle_force(uid, force);
-  lb->set_particle_torque(uid, torque);
+//   // Create particle
+//   std::uint64_t uid = 12;
+//   double radius = 0.1;
+//   Vector3d global_pos{0, 0, 0};
+//   Vector3d linear_vel{1.0, 0.2, 0.1};
+//   lb->add_particle(uid, global_pos, radius, linear_vel);
+//   lb->finish_particle_adding();
 
-  // Check that particle exists exactly on one rank
-  int exists = lb->is_particle_on_this_process(uid) ? 1 : 0;
-  MPI_Allreduce(MPI_IN_PLACE, &exists, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-  BOOST_CHECK(exists == 1);
+//   // Add force/torque
+//   Vector3d force{0.1, 0.5, 0.22};
+//   Vector3d torque{0.5, 0.1, 0.324};
+//   lb->set_particle_force(uid, force);
+//   lb->set_particle_torque(uid, torque);
 
+//   // Check that particle exists exactly on one rank
+//   int exists = lb->is_particle_on_this_process(uid) ? 1 : 0;
+//   MPI_Allreduce(MPI_IN_PLACE, &exists, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+//   BOOST_CHECK(exists == 1);
+
+//   if (lb->is_particle_on_this_process(uid)) {
+//     BOOST_CHECK(*(lb->get_particle_position(uid)) == global_pos);
+//     BOOST_CHECK(*(lb->get_particle_velocity(uid)) == linear_vel);
+//     BOOST_CHECK(*(lb->get_particle_force(uid)) == force);
+//     BOOST_CHECK(*(lb->get_particle_torque(uid)) == torque);
+//     // TODO: setter for angular vel and orientation
+//     // BOOST_CHECK(*(lb->get_particle_angular_velocity()) == angularVel);
+//     // BOOST_CHECK(*(lb->get_particle_orientation()) == orientation);
+//   } else {
+//     // Check that access to particle attributes is not possible
+//     BOOST_CHECK(!lb->get_particle_position(uid));
+//     BOOST_CHECK(!lb->get_particle_velocity(uid));
+//   }
+// }
+
+// BOOST_AUTO_TEST_CASE(remove_particle) {
+//   auto lb = std::make_shared<LBWalberlaD3Q19MRT>(
+//       viscosity, density, grid_dimensions, mpi_shape, 1, PE_Parameters());
+
+//   // Create particle
+//   std::uint64_t uid = 12;
+//   double radius = 0.1;
+//   Vector3d global_pos{0, 0, 0};
+//   Vector3d linear_vel{1.0, 0.2, 0.1};
+//   lb->add_particle(uid, global_pos, radius, linear_vel);
+//   lb->finish_particle_adding();
+
+//   // Add force/torque
+//   Vector3d force{0.1, 0.5, 0.22};
+//   Vector3d torque{0.5, 0.1, 0.324};
+//   lb->set_particle_force(uid, force);
+//   lb->set_particle_torque(uid, torque);
+
+//   lb->remove_particle(uid);
+
+//   // Check that particle doesn't exist on any rank
+//   BOOST_CHECK(lb->is_particle_on_this_process(uid) == false);
+// }
+
+BOOST_DATA_TEST_CASE(no_external_forces, bdata::make(pe_enabled_lbs()),
+                     lb_generator) {
+  auto lb = lb_generator(mpi_shape, params);
+
+  constexpr uint64_t uid = 0;
+  constexpr uint64_t steps = 100;
+
+  // Check force == 0 and no movement
   if (lb->is_particle_on_this_process(uid)) {
-    BOOST_CHECK(*(lb->get_particle_position(uid)) == global_pos);
-    BOOST_CHECK(*(lb->get_particle_velocity(uid)) == linear_vel);
-    BOOST_CHECK(*(lb->get_particle_force(uid)) == force);
-    BOOST_CHECK(*(lb->get_particle_torque(uid)) == torque);
-    // TODO: setter for angular vel and orientation
-    // BOOST_CHECK(*(lb->get_particle_angular_velocity()) == angularVel);
-    // BOOST_CHECK(*(lb->get_particle_orientation()) == orientation);
-  } else {
-    // Check that access to particle attributes is not possible
-    BOOST_CHECK(!lb->get_particle_position(uid));
-    BOOST_CHECK(!lb->get_particle_velocity(uid));
+    auto initial_position = *(lb->get_particle_position(uid));
+    for (uint64_t i = 0; i < steps; ++i) {
+      auto pos = *(lb->get_particle_position(uid));
+      auto f = *(lb->get_particle_force(uid));
+      BOOST_CHECK_SMALL(f.norm(), 1e-10);
+      BOOST_CHECK_SMALL((initial_position - pos).norm(), 1e-10);
+    }
   }
 }
 
-BOOST_AUTO_TEST_CASE(remove_particle) {
-  PE_Parameters peParams(true, true, 1.5, true, 1);
-  auto lb = std::make_shared<LBWalberlaD3Q19MRT>(
-      viscosity, density, grid_dimensions, mpi_shape, 1, peParams);
+BOOST_DATA_TEST_CASE(external_force, bdata::make(pe_enabled_lbs()),
+                     lb_generator) {
+  params.external_particle_forces = {{{.1, .1, .1}, "asd"}};
+  auto lb = lb_generator(mpi_shape, params);
 
-  // Create particle
-  std::uint64_t uid = 12;
-  double radius = 0.1;
-  Vector3d global_pos{0, 0, 0};
-  Vector3d linear_vel{1.0, 0.2, 0.1};
-  lb->add_particle(uid, global_pos, radius, linear_vel);
+  constexpr uint64_t uid = 0;
+  constexpr uint64_t steps = 100;
 
-  // Add force/torque
-  Vector3d force{0.1, 0.5, 0.22};
-  Vector3d torque{0.5, 0.1, 0.324};
-  lb->set_particle_force(uid, force);
-  lb->set_particle_torque(uid, torque);
-
-  lb->remove_particle(uid);
-
-  // Check that particle doesn't exist on any rank
-  BOOST_CHECK(lb->is_particle_on_this_process(uid) == false);
+  // Check force == 0 and no movement
+  if (lb->is_particle_on_this_process(uid)) {
+    auto initial_position = *(lb->get_particle_position(uid));
+    for (uint64_t i = 0; i < steps; ++i) {
+      auto pos = *(lb->get_particle_position(uid));
+      auto f = *(lb->get_particle_force(uid));
+      BOOST_CHECK_SMALL(f.norm(), 1e-10);
+      BOOST_CHECK_SMALL((initial_position - pos).norm(), 1e-10);
+    }
+  }
 }
+
+// BOOST_AUTO_TEST_CASE(getting_forces) {
+//   printf("MPI-Shape: %d %d %d\n", mpi_shape[0], mpi_shape[1],
+//   mpi_shape[2]); std::vector<std::pair<Vector3d, std::string>> ext_forces{
+//       {Vector3d{0, 0, -(1.166666 - 1.0) * 6.565115e-5 * 1.767e3},
+//        "Test force"}};
+//   PE_Parameters pe_params(ext_forces);
+//   BOOST_CHECK(pe_params.is_activated());
+//   // auto lb = std::make_shared<LBWalberlaD3Q19MRT>(
+//   //     4.942463e-3, 1.0, Vector3i{100, 100, 160}, mpi_shape, 1,
+//   pe_params); auto lb = std::make_shared<LBWalberlaD3Q19MRT>(
+//       4.942463e-3, 1.0, Vector3i{2, 2, 1}, Vector3i{50, 50, 160},
+//       mpi_shape, 1, pe_params);
+
+//   // Create particle
+//   std::uint64_t uid = 12;
+//   double radius = 7.5;
+//   Vector3d global_pos{50, 50, 20};
+//   Vector3d linear_vel{.0, .0, .0};
+//   lb->create_particle_material("myMat", 1.166666, 0.5, 0.1, 0.1, 0.24, 200,
+//   200,
+//                                0, 0);
+//   lb->add_particle(uid, global_pos, radius, linear_vel, "myMat");
+//   lb->finish_particle_adding();
+
+//   // Check force == 0 before integration
+//   auto f = lb->get_particle_force(uid);
+//   if (f)
+//     printf("Force: (%f, %f, %f)\n", (*f)[0], (*f)[1], (*f)[2]);
+//   if (lb->is_particle_on_this_process(uid)) {
+//     auto n = (*f).norm();
+//     BOOST_CHECK_SMALL(n, 1e-10);
+//   } else {
+//     BOOST_CHECK(!f);
+//   }
+
+//   // Check force != 0 after integration
+//   lb->integrate();
+//   // lb->integrate();
+//   f = lb->get_particle_force(uid);
+//   if (f)
+//     printf("Force: (%f, %f, %f)\n", (*f)[0], (*f)[1], (*f)[2]);
+//   if (lb->is_particle_on_this_process(uid)) {
+//     auto n = (*f).norm();
+//     BOOST_CHECK_GT(n, 1e-3);
+//   } else {
+//     BOOST_CHECK(!f);
+//   }
+
+//   for (int i = 0; i < 100; ++i) {
+//     lb->integrate();
+//     f = lb->get_particle_force(uid);
+//     auto pos = lb->get_particle_position(uid);
+//     if (f)
+//       printf("Force: (%f, %f, %f), Pos: (%f, %f, %f)\n", (*f)[0], (*f)[1],
+//              (*f)[2], (*pos)[0], (*pos)[1], (*pos)[2]);
+//   }
+// }
 
 int main(int argc, char **argv) {
   MPI_Init(&argc, &argv);
@@ -117,6 +212,8 @@ int main(int argc, char **argv) {
 
   MPI_Comm_size(MPI_COMM_WORLD, &n_nodes);
   MPI_Dims_create(n_nodes, 3, mpi_shape.data());
+
+  params = LBTestParameters({2, 1, 1}, {20, 20, 40});
 
   walberla_mpi_init();
   auto res = boost::unit_test::unit_test_main(init_unit_test, argc, argv);

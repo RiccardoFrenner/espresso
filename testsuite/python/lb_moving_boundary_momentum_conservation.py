@@ -44,30 +44,6 @@ PARTICLE_DENSITY = 1. / PARTICLE_VOLUME
 PARTICLE_MASS = PARTICLE_DENSITY*PARTICLE_VOLUME
 PARTICLE_VELOCITY = np.array([5.5 / GRID_SIZE**3] * 3)
 
-# CONST_GLOBAL_FORCES = [
-#     ([0,0,0], "Gravitational Force"),
-#     ([0,0,0], "No Force")
-# ]
-
-CONST_GLOBAL_FORCES = []
-
-PE_PARAMS = (
-    True,
-    True,
-    1.5,
-    True,
-    1,
-    CONST_GLOBAL_FORCES
-)
-
-LB_PARAMS = {'agrid': AGRID,
-             'dens': DENS,
-             'visc': KVISC,
-             'tau': TIME_STEP,
-             'ext_force_density': [-.7 * F, .9 * F, .8 * F],
-             'pe_params': PE_PARAMS}
-
-
 class Momentum(object):
     """
     Tests momentum conservation for an LB coupled to a particle, where opposing
@@ -129,14 +105,7 @@ class Momentum(object):
     def test_external_force(self):
         EXT_FORCE_DENSITY = [-.7 * F, .9 * F, .8 * F]
         CONST_GLOBAL_FORCES = [(-np.array(EXT_FORCE_DENSITY)*Momentum.SYSTEM_VOLUME, "negative_ext_fluid_force")]
-        PE_PARAMS = (
-            True,
-            True,
-            1.5,
-            True,
-            1,
-            CONST_GLOBAL_FORCES
-        )
+        PE_PARAMS = (CONST_GLOBAL_FORCES, )
         LB_PARAMS = {'agrid': AGRID,
                     'dens': DENS,
                     'visc': KVISC,
