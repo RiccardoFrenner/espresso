@@ -41,6 +41,7 @@
 #include "lbm/vtk/all.h"
 #include "timeloop/SweepTimeloop.h"
 
+#include "pe/Types.h"
 #include "pe/basic.h"
 #include "pe/rigidbody/BodyIterators.h"
 #include "pe/rigidbody/BodyStorage.h"
@@ -1075,9 +1076,15 @@ public:
          ++block_it) {
       auto pdf_field = block_it->template getData<PdfField>(m_pdf_field_id);
       Vector3<real_t> local_v;
+
+      // todo: we need to check if cell is domain in other functions too
+      auto *bh = block_it->getData<Boundaries>(m_boundary_handling_id);
       WALBERLA_FOR_ALL_CELLS_XYZ(pdf_field, {
-        real_t local_dens = pdf_field->getDensityAndVelocity(local_v, x, y, z);
-        mom += local_dens * local_v;
+        if (bh->isDomain(Cell(x, y, z))) {
+          real_t local_dens =
+              pdf_field->getDensityAndVelocity(local_v, x, y, z);
+          mom += local_dens * local_v;
+        }
       });
     }
     return to_vector3d(mom);
@@ -1424,10 +1431,13 @@ public:
                                 double cor, double csf, double cdf,
                                 double poisson, double young, double stiffness,
                                 double dampingN, double dampingT) override {
-
-    pe::createMaterial(name, real_c(density), real_c(cor), real_c(csf),
-                       real_c(cdf), real_c(poisson), real_c(young),
-                       real_c(stiffness), real_c(dampingN), real_c(dampingT));
+    // todo: remove if and remove completely from interface. Materials are not
+    // instance-based.
+    if (pe::Material::find(name) == pe::invalid_material) {
+      pe::createMaterial(name, real_c(density), real_c(cor), real_c(csf),
+                         real_c(cdf), real_c(poisson), real_c(young),
+                         real_c(stiffness), real_c(dampingN), real_c(dampingT));
+    }
   }
 
   void map_particles_to_lb_grid() override {
