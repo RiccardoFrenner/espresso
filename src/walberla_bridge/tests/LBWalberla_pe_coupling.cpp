@@ -17,8 +17,11 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <algorithm>
 #include <boost/test/tools/old/interface.hpp>
 #include <cstdint>
+#include <fstream>
+#include <mpi.h>
 #define BOOST_TEST_MODULE Walberla pe setters and getters test
 #define BOOST_TEST_DYN_LINK
 #include "config.hpp"
@@ -109,43 +112,97 @@ Vector3i mpi_shape;      // populated in main()
 //   BOOST_CHECK(lb->is_particle_on_this_process(uid) == false);
 // }
 
-BOOST_DATA_TEST_CASE(no_external_forces, bdata::make(pe_enabled_lbs()),
-                     lb_generator) {
-  auto lb = lb_generator(mpi_shape, params);
+// BOOST_DATA_TEST_CASE(no_external_forces, bdata::make(pe_enabled_lbs()),
+//                      lb_generator) {
+//   auto lb = lb_generator(mpi_shape, params);
 
-  constexpr uint64_t uid = 0;
-  constexpr uint64_t steps = 100;
+//   constexpr uint64_t uid = 0;
+//   constexpr uint64_t steps = 100;
 
-  // Check force == 0 and no movement
-  if (lb->is_particle_on_this_process(uid)) {
-    auto initial_position = *(lb->get_particle_position(uid));
-    for (uint64_t i = 0; i < steps; ++i) {
-      auto pos = *(lb->get_particle_position(uid));
-      auto f = *(lb->get_particle_force(uid));
-      BOOST_CHECK_SMALL(f.norm(), 1e-10);
-      BOOST_CHECK_SMALL((initial_position - pos).norm(), 1e-10);
+//   // Check force == 0 and no movement
+//   if (lb->is_particle_on_this_process(uid)) {
+//     auto initial_position = *(lb->get_particle_position(uid));
+//     for (uint64_t i = 0; i < steps; ++i) {
+//       lb->integrate();
+//       auto pos = *(lb->get_particle_position(uid));
+//       auto f = *(lb->get_particle_force(uid));
+//       BOOST_CHECK_SMALL(f.norm(), 1e-10);
+//       BOOST_CHECK_SMALL((initial_position - pos).norm(), 1e-10);
+//     }
+//   }
+// }
+
+void write_data(uint64_t timestep, std::vector<Vector3d> vectors,
+                std::string const &filename) {
+  std::ofstream file;
+  file.precision(5);
+  file.setf(std::ofstream::fixed);
+  file.open(filename.c_str(), std::ofstream::app);
+
+  file << "|" << std::setw(4) << timestep << " |";
+  for (auto const &vec : vectors) {
+    for (uint64_t i = 0; i < 3; ++i) {
+      file << std::setw(8) << vec[i] << " ";
     }
+    file << "(" << std::setw(8) << vec.norm() << ") |";
   }
+  file << std::endl;
+  file.close();
 }
 
-BOOST_DATA_TEST_CASE(external_force, bdata::make(pe_enabled_lbs()),
+BOOST_DATA_TEST_CASE(momentum_conservation, bdata::make(pe_enabled_lbs()),
                      lb_generator) {
-  params.external_particle_forces = {{{.1, .1, .1}, "asd"}};
+  params.particle_initial_velocity = Vector3d{.1, 0, 0};
   auto lb = lb_generator(mpi_shape, params);
+
+  // check fluid has no momentum
+  Vector3d fluid_mom = lb->get_momentum();
+  printf("fluid_mom: %f %f %f, norm: %f\n", fluid_mom[0], fluid_mom[1],
+         fluid_mom[2], fluid_mom.norm());
+  MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
+                MPI_COMM_WORLD);
+  BOOST_CHECK_SMALL(fluid_mom.norm(), 1e-10);
 
   constexpr uint64_t uid = 0;
   constexpr uint64_t steps = 100;
 
-  // Check force == 0 and no movement
-  if (lb->is_particle_on_this_process(uid)) {
-    auto initial_position = *(lb->get_particle_position(uid));
-    for (uint64_t i = 0; i < steps; ++i) {
-      auto pos = *(lb->get_particle_position(uid));
-      auto f = *(lb->get_particle_force(uid));
-      BOOST_CHECK_SMALL(f.norm(), 1e-10);
-      BOOST_CHECK_SMALL((initial_position - pos).norm(), 1e-10);
+  std::ofstream file;
+  std::string filename{"data/momentum_conservation.txt"};
+  file.open(filename.c_str());
+  file << "|  #  |"
+          "            fluid momentum            |"
+          "           particle velocity          |"
+          "           particle position          |"
+          "            particle force            |"
+       << std::endl;
+  file.close();
+  Vector3d particle_mom{};
+  Vector3d particle_pos{};
+  Vector3d particle_force{};
+  Vector3d particle_ang_vel{};
+  for (uint64_t i = 0; i < steps; ++i) {
+    fluid_mom = lb->get_momentum();
+    if (lb->is_particle_on_this_process(uid)) {
+      particle_mom =
+          *(lb->get_particle_velocity(uid)) * params.get_particle_mass();
+      particle_force = *(lb->get_particle_force(uid));
+      particle_pos = *(lb->get_particle_position(uid));
+      particle_ang_vel = *(lb->get_particle_angular_velocity(uid));
     }
+    write_data(i,
+               {fluid_mom, particle_mom / params.get_particle_mass(),
+                particle_pos, particle_ang_vel},
+               filename);
+    if (std::any_of(fluid_mom.begin(), fluid_mom.end(),
+                    [](double a) { return std::isnan(a); }))
+      break;
+    lb->integrate();
   }
+  MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
+                MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, particle_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
+                MPI_COMM_WORLD);
+  BOOST_CHECK_SMALL((particle_mom - fluid_mom).norm(), 1e-10);
 }
 
 // BOOST_AUTO_TEST_CASE(getting_forces) {
@@ -213,7 +270,25 @@ int main(int argc, char **argv) {
   MPI_Comm_size(MPI_COMM_WORLD, &n_nodes);
   MPI_Dims_create(n_nodes, 3, mpi_shape.data());
 
-  params = LBTestParameters({2, 1, 1}, {20, 20, 40});
+  Vector3i grid_dimension{20, 20, 40};
+  Vector3i block_dimension{1, 1, 1};
+  bool force_avg = true;
+  for (int i = 1; i < argc; ++i) {
+    if (std::strcmp(argv[i], "--grid_dim") == 0) {
+      grid_dimension = {std::atoi(argv[++i]), std::atoi(argv[++i]),
+                        std::atoi(argv[++i])};
+    }
+    if (std::strcmp(argv[i], "--block_dim") == 0) {
+      block_dimension = {std::atoi(argv[++i]), std::atoi(argv[++i]),
+                         std::atoi(argv[++i])};
+    }
+    if (std::strcmp(argv[i], "--no_force_avg") == 0) {
+      force_avg = false;
+      ++i;
+    }
+  }
+  params = LBTestParameters(block_dimension, grid_dimension, force_avg);
+  params.particle_radius = 3;
 
   walberla_mpi_init();
   auto res = boost::unit_test::unit_test_main(init_unit_test, argc, argv);

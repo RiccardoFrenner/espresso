@@ -60,6 +60,7 @@ public:
   Utils::Vector3d particle_initial_position;
   Utils::Vector3d particle_initial_velocity;
   std::vector<std::pair<Utils::Vector3d, std::string>> external_particle_forces;
+  bool force_avg = true;
 
   double get_particle_volume() {
     return 4. / 3. * Utils::pi() * std::pow(particle_radius, 3);
@@ -79,26 +80,31 @@ public:
                         double(grid_dimensions_[2])}),
         grid_dimensions(grid_dimensions_), particle_density(1.1),
         particle_initial_velocity({0, 0, 0}), external_particle_forces() {
-    auto min_length = *std::min_element(grid_dimensions_.as_vector().begin(),
-                                        grid_dimensions_.as_vector().end());
-    particle_radius = .1 * min_length;
+    auto min_length =
+        *std::min_element(grid_dimensions_.begin(), grid_dimensions_.end());
+    particle_radius = std::max(min_length * .1, 2.);
+    printf("Min length: %d\n", min_length);
+    printf("Particle radius: %f\n", particle_radius);
     particle_initial_position =
         Utils::Vector3d{.5 * grid_dimensions_[0], .5 * grid_dimensions_[1],
                         2 * particle_radius};
   }
   LBTestParameters(Utils::Vector3i n_blocks_,
                    Utils::Vector3i grid_dimensions_ = Utils::Vector3i{100, 100,
-                                                                      160})
+                                                                      160},
+                   bool force_avg_ = true)
       : seed(0), kT(0), viscosity(5e-3), density(1.),
         box_dimensions({double(grid_dimensions_[0]),
                         double(grid_dimensions_[1]),
                         double(grid_dimensions_[2])}),
         grid_dimensions(grid_dimensions_), n_blocks(n_blocks_),
         particle_density(1.1), particle_initial_velocity({0, 0, 0}),
-        external_particle_forces() {
+        external_particle_forces(), force_avg(force_avg_) {
     int min_length =
         *(std::min_element(grid_dimensions_.begin(), grid_dimensions_.end()));
-    particle_radius = .1 * min_length;
+    particle_radius = std::max(.1 * min_length, 2.);
+    printf("Min length: %d\n", min_length);
+    printf("Particle radius: %f\n", particle_radius);
     particle_initial_position =
         Utils::Vector3d{.5 * grid_dimensions_[0], .5 * grid_dimensions_[1],
                         2 * particle_radius};
@@ -157,11 +163,13 @@ LbGeneratorVector pe_enabled_lbs() {
     auto lb = std::make_shared<walberla::LBWalberlaD3Q19MRT>(
         params.viscosity, params.density, n_blocks,
         bs_helper.get_n_cells_per_block(), mpi_shape, 1,
-        PE_Parameters(params.external_particle_forces));
+        PE_Parameters(params.external_particle_forces, 1, true,
+                      params.force_avg));
     lb->create_particle_material("Test material", params.particle_density, 0.5,
                                  0.1, 0.1, 0.24, 200, 200, 0, 0);
     lb->add_particle(0, params.particle_initial_position,
-                     params.particle_radius, params.particle_initial_velocity);
+                     params.particle_radius, params.particle_initial_velocity,
+                     "Test material");
     lb->finish_particle_adding();
     return lb;
   });
