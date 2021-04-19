@@ -1089,6 +1089,28 @@ public:
     }
     return to_vector3d(mom);
   };
+
+  // Global energy
+  double get_energy() const override {
+    real_t energy{0};
+    for (auto block_it = m_blocks->begin(); block_it != m_blocks->end();
+         ++block_it) {
+      auto pdf_field = block_it->template getData<PdfField>(m_pdf_field_id);
+      Vector3<real_t> local_v;
+
+      // todo: we need to check if cell is domain in other functions too
+      auto *bh = block_it->getData<Boundaries>(m_boundary_handling_id);
+      WALBERLA_FOR_ALL_CELLS_XYZ(pdf_field, {
+        if (bh->isDomain(Cell(x, y, z))) {
+          real_t local_dens =
+              pdf_field->getDensityAndVelocity(local_v, x, y, z);
+          energy += .5 * local_dens * math::dot(local_v, local_v);
+        }
+      });
+    }
+    return energy;
+  };
+
   // Global external force
   void set_external_force(const Utils::Vector3d &ext_force) override {
     m_reset_force->set_ext_force(ext_force);
@@ -1261,7 +1283,8 @@ public:
     return p != nullptr;
   }
   bool add_particle(std::uint64_t uid, Utils::Vector3d const &gpos,
-                    double radius, Utils::Vector3d const &linVel,
+                    double radius,
+                    Utils::Vector3d const &linVel = Utils::Vector3d{0, 0, 0},
                     std::string const &material_name = "iron") override {
     if (m_pe_particles.find(uid) != m_pe_particles.end()) {
       return false;
@@ -1352,6 +1375,13 @@ public:
       return {to_vector3d(p->getAngularVel())};
     }
     return {};
+  }
+  void set_particle_orientation(std::uint64_t uid,
+                                Utils::Quaternion<double> const &q) override {
+    pe::BodyID p = get_particle(uid);
+    if (p != nullptr) {
+      p->setOrientation(q[0], q[1], q[2], q[3]);
+    }
   }
   boost::optional<Utils::Quaternion<double>>
   get_particle_orientation(std::uint64_t uid) const override {
