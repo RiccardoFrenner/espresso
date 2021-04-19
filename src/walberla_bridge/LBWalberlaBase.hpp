@@ -113,6 +113,9 @@ public:
   /** @brief Calculate momentum summed over all nodes on the MPI rank */
   virtual Utils::Vector3d get_momentum() const = 0;
 
+  /** @brief Calculate energy summed over all nodes on the MPI rank */
+  virtual double get_energy() const = 0;
+
   virtual void set_external_force(const Utils::Vector3d &ext_force) = 0;
   virtual Utils::Vector3d get_external_force() const = 0;
 
@@ -184,6 +187,8 @@ public:
                                              Utils::Vector3d const &w) = 0;
   virtual boost::optional<Utils::Vector3d>
   get_particle_angular_velocity(std::uint64_t uid) const = 0;
+  virtual void set_particle_orientation(std::uint64_t uid,
+                                        Utils::Quaternion<double> const &q) = 0;
   virtual boost::optional<Utils::Quaternion<double>>
   get_particle_orientation(std::uint64_t uid) const = 0;
   virtual boost::optional<Utils::Vector3d>
@@ -203,10 +208,11 @@ public:
   virtual void sync_particles() = 0;
   virtual void map_particles_to_lb_grid() = 0;
   virtual void finish_particle_adding() = 0;
-  virtual void create_particle_material(
-      std::string const &name, double density, double cor, double csf,
-      double cdf, double poisson, double young,
-      double stiffness, double dampingN, double dampingT) = 0;
+  virtual void create_particle_material(std::string const &name, double density,
+                                        double cor, double csf, double cdf,
+                                        double poisson, double young,
+                                        double stiffness, double dampingN,
+                                        double dampingT) = 0;
   virtual std::vector<std::pair<Utils::Vector3d, std::string>>
   get_external_particle_forces() const = 0;
   virtual ~LBWalberlaBase() = default;
