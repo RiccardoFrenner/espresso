@@ -26,16 +26,23 @@ import numpy as np
 TIME_STEP = 0.008
 AGRID = .4
 GRID_SIZE = 6
-KVISC = 4
-DENS = 2.3
-F = 5.5 / GRID_SIZE**3
+KVISC = 5e-3 * AGRID**2 / TIME_STEP
+DENS = AGRID**(-3)
+F = 1e-6 * 5.5 / GRID_SIZE**3
 GAMMA = 1
 
+SYSTEM_VOLUME = AGRID*GRID_SIZE * AGRID*GRID_SIZE * AGRID*GRID_SIZE
+EXTERNAL_FORCE_DENSITY = [-.7 * F, .9 * F, .8 * F]
+EXT_FLUID_FORCE = SYSTEM_VOLUME * np.array(EXTERNAL_FORCE_DENSITY)
+
+PE_PARAMS = ([(-EXT_FLUID_FORCE, "Minus external fluid force")],)
 
 LB_PARAMS = {'agrid': AGRID,
              'dens': DENS,
              'visc': KVISC,
-             'tau': TIME_STEP}
+             'tau': TIME_STEP,
+             'ext_force_density': EXTERNAL_FORCE_DENSITY,
+             "pe_params": PE_PARAMS}
 
 
 class Momentum(object):
@@ -55,26 +62,42 @@ class Momentum(object):
         self.system.part.clear()
         self.system.actors.add(self.lbf)
         self.system.thermostat.set_lb(LB_fluid=self.lbf, gamma=GAMMA, seed=1)
+        np.testing.assert_allclose(
+            self.lbf.ext_force_density,
+            LB_PARAMS["ext_force_density"])
 
         # Initial momentum before integration = 0
         np.testing.assert_allclose(
             self.system.analysis.linear_momentum(), [0., 0., 0.], atol=1E-12)
 
-        p = self.system.part.add(
-            pos=self.system.box_l / 2, v=[.2, .4, .6])
-        initial_momentum = np.array(self.system.analysis.linear_momentum())
-        np.testing.assert_allclose(initial_momentum, np.copy(p.v) * p.mass)
+        p_uid = 0
+        p_v = 1e-6*np.array([.2, .4, .6])
+        p_radius = 2
+        p_density = 1.1
+
+        p_mass = 4./3. * np.pi * np.power(p_radius,3) * p_density
+        self.lbf.create_particle_material("myMat", p_density)
+
+        self.lbf.add_particle(p_uid, [3,3,3], p_radius, p_v)
+        # p = self.system.part.add(pos=self.system.box_l / 2, virtual=True)
+
+        initial_momentum = np.array(self.system.analysis.linear_momentum(include_particles=False)) + p_v * p_mass
+        np.testing.assert_allclose(initial_momentum, np.copy(p_v) * p_mass)
         while True:
+            print("LKAJSFLKDFJALKFJLK")
             self.system.integrator.run(500)
 
-            measured_momentum = self.system.analysis.linear_momentum()
-            coupling_force = -p.f
+            p_v = self.lbf.get_particle_velocity(p_uid)
+            p_pos = self.lbf.get_particle_position(p_uid)
+            p_f = self.lbf.get_particle_force(p_uid) - EXT_FLUID_FORCE
+            measured_momentum = self.system.analysis.linear_momentum(include_lbfluid=False) + p_v * p_mass
+            coupling_force = -(p_f + EXT_FLUID_FORCE)
             compensation = -TIME_STEP / 2 * coupling_force
 
             np.testing.assert_allclose(measured_momentum + compensation,
                                        initial_momentum, atol=1E-4)
-            if np.linalg.norm(p.f) < 0.01 \
-               and np.all(np.abs(p.pos) > 10.1 * self.system.box_l):
+            if np.linalg.norm(p_f) < 0.01 \
+               and np.all(np.abs(p_pos) > 10.1 * self.system.box_l):
                 break
 
         # Make sure, the particle has crossed the periodic boundaries
