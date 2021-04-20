@@ -69,7 +69,7 @@ BOOST_AUTO_TEST_CASE(particle_setters_getters) {
   lb->finish_particle_adding();
 
   // Set attributes
-  Quaternion<double> orientation{.23, .1, 0., .2};
+  Quaternion<double> orientation{1., 0., 0., 0.};
   Vector3d linear_vel{1.0, 0.2, 0.1};
   Vector3d angular_vel{1.1, 0.1, 0.3};
   Vector3d force{0.1, 0.5, 0.22};
@@ -307,7 +307,7 @@ int main(int argc, char **argv) {
   MPI_Comm_size(MPI_COMM_WORLD, &n_nodes);
   MPI_Dims_create(n_nodes, 3, mpi_shape.data());
 
-  Vector3i grid_dimension{20, 20, 40};
+  Vector3i grid_dimension{24, 24, 24};
   Vector3i block_dimension{1, 1, 1};
   bool force_avg = true;
   for (int i = 1; i < argc; ++i) {

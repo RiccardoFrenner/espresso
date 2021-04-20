@@ -636,7 +636,8 @@ private:
         uint_c(n_processes[2]),       // cpus in z direction
         true, true, true);            // periodicity
 
-    debug_print_block_setup();
+    // todo: remove
+    // debug_print_block_setup();
   }
 
 public:

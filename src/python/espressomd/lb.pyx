@@ -454,6 +454,7 @@ IF LB_WALBERLA:
             lb_dens = self._params['dens'] * self._params['agrid']**3
             lb_kT = self._params['kT'] * \
                 self._params['tau']**2 / self._params['agrid']**2
+
             if "pe_params" in self._params:
                 mpi_init_lb_walberla(
                     lb_visc, lb_dens, self._params["agrid"], self._params["tau"],

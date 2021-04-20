@@ -83,8 +83,6 @@ public:
     auto min_length =
         *std::min_element(grid_dimensions_.begin(), grid_dimensions_.end());
     particle_radius = std::max(min_length * .1, 2.);
-    printf("Min length: %d\n", min_length);
-    printf("Particle radius: %f\n", particle_radius);
     particle_initial_position =
         Utils::Vector3d{.5 * grid_dimensions_[0], .5 * grid_dimensions_[1],
                         2 * particle_radius};
@@ -103,8 +101,6 @@ public:
     int min_length =
         *(std::min_element(grid_dimensions_.begin(), grid_dimensions_.end()));
     particle_radius = std::max(.1 * min_length, 2.);
-    printf("Min length: %d\n", min_length);
-    printf("Particle radius: %f\n", particle_radius);
     particle_initial_position =
         Utils::Vector3d{.5 * grid_dimensions_[0], .5 * grid_dimensions_[1],
                         2 * particle_radius};
