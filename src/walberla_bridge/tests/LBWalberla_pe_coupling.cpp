@@ -147,6 +147,8 @@ void write_data(uint64_t timestep, std::vector<Vector3d> vectors,
 BOOST_DATA_TEST_CASE(momentum_conservation, bdata::make(pe_enabled_lbs()),
                      lb_generator) {
   params.particle_initial_velocity = Vector3d{.1, 0, 0};
+  auto const initial_momentum =
+      params.particle_initial_velocity * params.get_particle_mass();
   auto lb = lb_generator(mpi_shape, params);
 
   // check fluid has no momentum
@@ -180,21 +182,37 @@ BOOST_DATA_TEST_CASE(momentum_conservation, bdata::make(pe_enabled_lbs()),
       particle_force = *(lb->get_particle_force(uid));
       particle_pos = *(lb->get_particle_position(uid));
       particle_ang_vel = *(lb->get_particle_angular_velocity(uid));
+
+      // Check particle is far enough from boundary
+      {
+        auto p_ = particle_pos - .5 * params.grid_dimensions;
+        auto r_ = params.particle_radius;
+        for (int i = 0; i < 3; ++i) {
+          if (p_[i] > .5 * params.grid_dimensions[i] - 1.5 * r_) {
+            std::cout << "Particle too close to boundary. Stopping test..."
+                      << std::endl;
+            break;
+          }
+        }
+      }
+
+      write_data(i,
+                 {fluid_mom, particle_mom / params.get_particle_mass(),
+                  particle_pos, particle_ang_vel},
+                 filename);
     }
-    write_data(i,
-               {fluid_mom, particle_mom / params.get_particle_mass(),
-                particle_pos, particle_ang_vel},
-               filename);
     if (std::any_of(fluid_mom.begin(), fluid_mom.end(),
-                    [](double a) { return std::isnan(a); }))
-      break;
+                    [](double a) { return std::isnan(a); })) {
+      std::cout << "Found NAN values ... exiting" << std::endl;
+      return;
+    }
     lb->integrate();
   }
   MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
                 MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, particle_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
                 MPI_COMM_WORLD);
-  BOOST_CHECK_SMALL((particle_mom - fluid_mom).norm(), 1e-10);
+  BOOST_CHECK_SMALL((initial_momentum - particle_mom + fluid_mom).norm(), 1e-6);
 }
 
 BOOST_DATA_TEST_CASE(energy_conservation, bdata::make(pe_enabled_lbs()),
@@ -218,7 +236,7 @@ BOOST_DATA_TEST_CASE(energy_conservation, bdata::make(pe_enabled_lbs()),
   double particle_energy = 0.;
   double fluid_energy = 0.;
   Vector3d particle_lin_velocity{};
-  Vector3d particle_avg_velocity{};
+  Vector3d particle_ang_velocity{};
   for (uint64_t i = 0; i < steps; ++i) {
     lb->integrate();
   }
@@ -227,15 +245,16 @@ BOOST_DATA_TEST_CASE(energy_conservation, bdata::make(pe_enabled_lbs()),
                 MPI_COMM_WORLD);
   if (lb->is_particle_on_this_process(uid)) {
     particle_lin_velocity = *(lb->get_particle_velocity(uid));
-    particle_avg_velocity = *(lb->get_particle_angular_velocity(uid));
+    particle_ang_velocity = *(lb->get_particle_angular_velocity(uid));
     particle_energy = .5 * params.get_particle_mass() *
                       Utils::dot(particle_lin_velocity, particle_lin_velocity);
-    BOOST_CHECK_SMALL(particle_avg_velocity.norm(), 1e-8);
+    BOOST_CHECK_SMALL(particle_ang_velocity.norm(), 1e-8);
     BOOST_CHECK_CLOSE(initial_particle_energy + initial_fluid_energy,
                       particle_energy + fluid_energy, 1e-4);
   }
 }
 
+// Check that fluid receives correct velocities from bb-boundary
 BOOST_DATA_TEST_CASE(bb_boundary, bdata::make(pe_enabled_lbs()), lb_generator) {
   params.particle_initial_velocity = Vector3d{.011, -.013, .021};
   auto lb = lb_generator(mpi_shape, params);
