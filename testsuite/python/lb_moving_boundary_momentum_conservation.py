@@ -34,11 +34,13 @@ F = 5.5 / GRID_SIZE**3
 GAMMA = 1
 
 SYSTEM_VOLUME = (AGRID*GRID_SIZE)**3
-EXTERNAL_FORCE_DENSITY = [-.7 * F, .9 * F, .8 * F]
+# EXTERNAL_FORCE_DENSITY = [-.7 * F, .9 * F, .8 * F]
+EXTERNAL_FORCE_DENSITY = [0., 0., 0.]
 EXT_FLUID_FORCE = SYSTEM_VOLUME * np.array(EXTERNAL_FORCE_DENSITY)
+EXT_PARTICLE_FORCE = [0., 0., -F]
 
-# PE_PARAMS = ([(-EXT_FLUID_FORCE, "Minus external fluid force")],)
-PE_PARAMS = ([],)
+PE_PARAMS = ([(EXT_PARTICLE_FORCE, "External particle force")],)
+# PE_PARAMS = ([],)
 
 LB_PARAMS = {'agrid': AGRID,
              'dens': DENS,
@@ -73,7 +75,7 @@ class Momentum(object):
             self.system.analysis.linear_momentum(), [0., 0., 0.], atol=1E-12)
 
         p_uid = 0
-        p_v_lu = np.array([0, 0, 0])
+        p_v_lu = np.array([0, 0, 0]) # lu -> lattice units
         p_radius_lu = 2
         p_density_lu = 1.1
 
@@ -83,8 +85,8 @@ class Momentum(object):
         p_mass = 4./3. * np.pi * np.power(p_radius,3) * p_density
         self.lbf.create_particle_material("myMat", p_density_lu)
 
+        # pe interface currently needs lattice units, will be changed soon
         self.lbf.add_particle(p_uid, [GRID_SIZE//2]*3, p_radius_lu, p_v_lu)
-        # p = self.system.part.add(pos=self.system.box_l / 2, virtual=True)
 
         p_pos = self.lbf.get_particle_position(p_uid)
         p_v = self.lbf.get_particle_velocity(p_uid)
@@ -93,10 +95,13 @@ class Momentum(object):
         np.testing.assert_allclose(np.copy(p_pos), np.copy(self.system.box_l/2))
         np.testing.assert_allclose(np.copy(p_v), AGRID/TIME_STEP*p_v_lu)
 
-        initial_momentum = np.array(self.system.analysis.linear_momentum(include_particles=False)) + p_v * p_mass
+        get_fluid_mom = lambda : np.array(
+            self.system.analysis.linear_momentum(include_particles=False))
+
+        initial_momentum = get_fluid_mom() + p_v * p_mass
         np.testing.assert_allclose(initial_momentum, np.copy(p_v) * p_mass)
         steps_per_it = 1
-        compensation = 0
+        external_impulse = 0
         print(initial_momentum)
         for i in count(0, 1):
             # print(f"Iteration: {i*steps_per_it}")
@@ -104,29 +109,30 @@ class Momentum(object):
 
             p_v = self.lbf.get_particle_velocity(p_uid)
             p_pos = self.lbf.get_particle_position(p_uid)
-            p_f = self.lbf.get_particle_force(p_uid)# - EXT_FLUID_FORCE
-            measured_momentum = self.system.analysis.linear_momentum(include_particles=False) + p_v * p_mass
-            coupling_force = -p_f #- EXT_FLUID_FORCE
-            # compensation = -TIME_STEP / 2 * coupling_force
-            compensation += TIME_STEP * np.array(EXTERNAL_FORCE_DENSITY) * (SYSTEM_VOLUME - p_mass/p_density)
 
-            with np.printoptions(precision=3, floatmode='fixed'):
-                print(measured_momentum, measured_momentum - p_v * p_mass, p_v * p_mass)
-            np.testing.assert_allclose(measured_momentum,
-                                       compensation, atol=1E-2)
+            # get_particle_force only returns hydrodynamic force
+            p_f = self.lbf.get_particle_force(p_uid) + EXT_PARTICLE_FORCE
+
+            measured_momentum = get_fluid_mom() + p_v * p_mass
+
+            fluid_volume = SYSTEM_VOLUME - p_mass/p_density
+            # compensation due to external impulse (dp = dt * F)
+            external_impulse += TIME_STEP * (
+                np.array(EXTERNAL_FORCE_DENSITY) * fluid_volume # Force on fluid
+                + EXT_PARTICLE_FORCE) # Force on particle
+
+            with np.printoptions(precision=2, floatmode='fixed'):
+                fm = measured_momentum - p_v * p_mass
+                pm = p_v * p_mass
+                print("| {:5.2e} | {:5.2e} | {:5.2e} | {:5.2e} |".format(
+                    external_impulse[2], measured_momentum[2], fm[2], pm[2]))
+
+            # np.testing.assert_allclose(measured_momentum,
+            #                            external_impulse, atol=1E-2)
+
             if np.any(np.abs(p_pos - .5*self.system.box_l) > .5*self.system.box_l - 1.5*p_radius):
                 print(f"Particle ({p_pos}) too close to boundary ({self.system.box_l}).\nStopping simulation...")
                 break
-            # if np.linalg.norm(p_f) < 0.01 \
-            #    and np.all(np.abs(p_pos) > 10.1 * self.system.box_l):
-            #     break
-
-        # # Make sure, the particle has crossed the periodic boundaries
-        # self.assertGreater(
-        #     max(
-        #         np.abs(p.v) *
-        #         self.system.time),
-        #     self.system.box_l[0])
 
 
 @utx.skipIfMissingFeatures(['LB_WALBERLA'])
