@@ -212,7 +212,8 @@ BOOST_DATA_TEST_CASE(momentum_conservation, bdata::make(pe_enabled_lbs()),
                 MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, particle_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
                 MPI_COMM_WORLD);
-  BOOST_CHECK_SMALL((initial_momentum - particle_mom + fluid_mom).norm(), 1e-6);
+  // Check total momentum is conserved
+  BOOST_CHECK_SMALL((initial_momentum - particle_mom - fluid_mom).norm(), 1e-6);
 }
 
 BOOST_DATA_TEST_CASE(energy_conservation, bdata::make(pe_enabled_lbs()),
@@ -249,6 +250,7 @@ BOOST_DATA_TEST_CASE(energy_conservation, bdata::make(pe_enabled_lbs()),
     particle_energy = .5 * params.get_particle_mass() *
                       Utils::dot(particle_lin_velocity, particle_lin_velocity);
     BOOST_CHECK_SMALL(particle_ang_velocity.norm(), 1e-8);
+    // Check total energy is conserved
     BOOST_CHECK_CLOSE(initial_particle_energy + initial_fluid_energy,
                       particle_energy + fluid_energy, 1e-4);
   }
