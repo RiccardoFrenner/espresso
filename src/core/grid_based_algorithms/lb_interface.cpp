@@ -712,9 +712,10 @@ void pe_remove_particle(std::uint64_t uid) {
 Utils::Vector3d pe_get_particle_velocity(std::uint64_t uid) {
 #ifdef LB_WALBERLA
   if (lattice_switch == ActiveLB::WALBERLA) {
-    return ::Communication::mpiCallbacks().call(
+    auto v = ::Communication::mpiCallbacks().call(
         ::Communication::Result::one_rank,
         Walberla::PE_Coupling::get_particle_velocity, uid);
+    return v * lb_lbfluid_get_lattice_speed(); // unit conversion (todo?)
   }
 #endif
 
@@ -724,9 +725,10 @@ Utils::Vector3d pe_get_particle_velocity(std::uint64_t uid) {
 Utils::Vector3d pe_get_particle_angular_velocity(std::uint64_t uid) {
 #ifdef LB_WALBERLA
   if (lattice_switch == ActiveLB::WALBERLA) {
-    return ::Communication::mpiCallbacks().call(
+    auto w = ::Communication::mpiCallbacks().call(
         ::Communication::Result::one_rank,
         Walberla::PE_Coupling::get_particle_angular_velocity, uid);
+    return w / lb_lbfluid_get_tau(); // unit conversion (todo?)
   }
 #endif
 
@@ -739,6 +741,7 @@ Utils::Quaternion<double> pe_get_particle_orientation(std::uint64_t uid) {
     return ::Communication::mpiCallbacks().call(
         ::Communication::Result::one_rank,
         Walberla::PE_Coupling::get_particle_orientation, uid);
+    // unit conversion (todo?)
   }
 #endif
 
@@ -748,9 +751,10 @@ Utils::Quaternion<double> pe_get_particle_orientation(std::uint64_t uid) {
 Utils::Vector3d pe_get_particle_position(std::uint64_t uid) {
 #ifdef LB_WALBERLA
   if (lattice_switch == ActiveLB::WALBERLA) {
-    return ::Communication::mpiCallbacks().call(
+    auto p = ::Communication::mpiCallbacks().call(
         ::Communication::Result::one_rank,
         Walberla::PE_Coupling::get_particle_position, uid);
+    return p * lb_lbfluid_get_agrid(); // unit conversion (todo?)
   }
 #endif
 
@@ -760,9 +764,11 @@ Utils::Vector3d pe_get_particle_position(std::uint64_t uid) {
 Utils::Vector3d pe_get_particle_force(std::uint64_t uid) {
 #ifdef LB_WALBERLA
   if (lattice_switch == ActiveLB::WALBERLA) {
-    return ::Communication::mpiCallbacks().call(
+    auto f = ::Communication::mpiCallbacks().call(
         ::Communication::Result::one_rank,
         Walberla::PE_Coupling::get_particle_force, uid);
+    return f * lb_lbfluid_get_lattice_speed() /
+           lb_lbfluid_get_tau(); // unit conversion (todo?)
   }
 #endif
 
@@ -772,9 +778,11 @@ Utils::Vector3d pe_get_particle_force(std::uint64_t uid) {
 Utils::Vector3d pe_get_particle_torque(std::uint64_t uid) {
 #ifdef LB_WALBERLA
   if (lattice_switch == ActiveLB::WALBERLA) {
-    return ::Communication::mpiCallbacks().call(
+    auto t = ::Communication::mpiCallbacks().call(
         ::Communication::Result::one_rank,
         Walberla::PE_Coupling::get_particle_torque, uid);
+    return t * lb_lbfluid_get_lattice_speed() *
+           lb_lbfluid_get_lattice_speed(); // unit conversion (todo?)
   }
 #endif
 
