@@ -75,31 +75,27 @@ class Momentum(object):
             self.system.analysis.linear_momentum(), [0., 0., 0.], atol=1E-12)
 
         p_uid = 0
-        p_v_lu = np.array([0, 0, 0]) # lu -> lattice units
-        p_radius_lu = 2
-        p_density_lu = 1.1
+        p_initial_v = np.array([0,0,0])
+        p_radius = 2 * AGRID
+        p_density = 1.1 * DENS
 
-        p_radius = p_radius_lu * AGRID
-        p_density = p_density_lu * AGRID**(-3)
-
-        p_mass = 4./3. * np.pi * np.power(p_radius,3) * p_density
-        self.lbf.create_particle_material("myMat", p_density_lu)
-
-        # pe interface currently needs lattice units, will be changed soon
-        self.lbf.add_particle(p_uid, [GRID_SIZE//2]*3, p_radius_lu, p_v_lu)
+        self.lbf.create_particle_material("myMat", p_density)
+        self.lbf.add_particle(p_uid, self.system.box_l/2, p_radius, p_initial_v)
 
         p_pos = self.lbf.get_particle_position(p_uid)
         p_v = self.lbf.get_particle_velocity(p_uid)
 
         # Check unit conversion
         np.testing.assert_allclose(np.copy(p_pos), np.copy(self.system.box_l/2))
-        np.testing.assert_allclose(np.copy(p_v), AGRID/TIME_STEP*p_v_lu)
+        np.testing.assert_allclose(np.copy(p_v), p_initial_v)
 
         get_fluid_mom = lambda : np.array(
             self.system.analysis.linear_momentum(include_particles=False))
 
-        initial_momentum = get_fluid_mom() + p_v * p_mass
+        p_mass = 4./3. * np.pi * np.power(p_radius,3) * p_density
+        initial_momentum = get_fluid_mom() + p_initial_v * p_mass
         np.testing.assert_allclose(initial_momentum, np.copy(p_v) * p_mass)
+
         steps_per_it = 1
         external_impulse = 0
         print(initial_momentum)
