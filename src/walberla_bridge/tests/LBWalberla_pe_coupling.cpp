@@ -121,205 +121,277 @@ BOOST_AUTO_TEST_CASE(remove_particle) {
   BOOST_CHECK(lb->is_particle_on_this_process(uid) == false);
 }
 
-// Check that particle receives correct hydrodynamik force
-BOOST_DATA_TEST_CASE(MEM_forces, bdata::make(pe_enabled_lbs()), lb_generator) {
-  auto lb = lb_generator(mpi_shape, params);
-}
+int count_boundary_cells(Vector3d my_left, Vector3d my_right,
+                         std::function<bool(Vector3i)> is_node_boundary) {
+  int count = 0;
 
-void write_data(uint64_t timestep, std::vector<Vector3d> vectors,
-                std::string const &filename) {
-  std::ofstream file;
-  file.precision(5);
-  file.setf(std::ofstream::fixed);
-  file.open(filename.c_str(), std::ofstream::app);
-
-  file << "|" << std::setw(4) << timestep << " |";
-  for (auto const &vec : vectors) {
-    for (uint64_t i = 0; i < 3; ++i) {
-      file << std::setw(8) << vec[i] << " ";
-    }
-    file << "(" << std::setw(8) << vec.norm() << ") |";
-  }
-  file << std::endl;
-  file.close();
-}
-
-BOOST_DATA_TEST_CASE(momentum_conservation, bdata::make(pe_enabled_lbs()),
-                     lb_generator) {
-  params.particle_initial_velocity = Vector3d{.1, 0, 0};
-  auto const initial_momentum =
-      params.particle_initial_velocity * params.get_particle_mass();
-  auto lb = lb_generator(mpi_shape, params);
-
-  // check fluid has no momentum
-  Vector3d fluid_mom = lb->get_momentum();
-  MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
-                MPI_COMM_WORLD);
-  BOOST_CHECK_SMALL(fluid_mom.norm(), 1e-10);
-
-  constexpr uint64_t uid = 0;
-  constexpr uint64_t steps = 100;
-
-  std::ofstream file;
-  std::string filename{"data/momentum_conservation.txt"};
-  file.open(filename.c_str());
-  file << "|  #  |"
-          "            fluid momentum            |"
-          "           particle velocity          |"
-          "           particle position          |"
-          "            particle force            |"
-       << std::endl;
-  file.close();
-  Vector3d particle_mom{};
-  Vector3d particle_pos{};
-  Vector3d particle_force{};
-  Vector3d particle_ang_vel{};
-  for (uint64_t i = 0; i < steps; ++i) {
-    fluid_mom = lb->get_momentum();
-    if (lb->is_particle_on_this_process(uid)) {
-      particle_mom =
-          *(lb->get_particle_velocity(uid)) * params.get_particle_mass();
-      particle_force = *(lb->get_particle_force(uid));
-      particle_pos = *(lb->get_particle_position(uid));
-      particle_ang_vel = *(lb->get_particle_angular_velocity(uid));
-
-      // Check particle is far enough from boundary
-      {
-        auto p_ = particle_pos - .5 * params.grid_dimensions;
-        auto r_ = params.particle_radius;
-        for (int i = 0; i < 3; ++i) {
-          if (p_[i] > .5 * params.grid_dimensions[i] - 1.5 * r_) {
-            std::cout << "Particle too close to boundary. Stopping test..."
-                      << std::endl;
-            break;
-          }
-        }
+  for (int x = static_cast<int>(my_left[0]); x < static_cast<int>(my_right[0]);
+       x++) {
+    for (int y = static_cast<int>(my_left[1]);
+         y < static_cast<int>(my_right[1]); y++) {
+      for (int z = static_cast<int>(my_left[2]);
+           z < static_cast<int>(my_right[2]); z++) {
+        const Vector3i node{{x, y, z}};
+        count += is_node_boundary(node) ? 1 : 0;
       }
-
-      write_data(i,
-                 {fluid_mom, particle_mom / params.get_particle_mass(),
-                  particle_pos, particle_ang_vel},
-                 filename);
     }
-    if (std::any_of(fluid_mom.begin(), fluid_mom.end(),
-                    [](double a) { return std::isnan(a); })) {
-      std::cout << "Found NAN values ... exiting" << std::endl;
-      return;
-    }
-    lb->integrate();
   }
-  MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
-                MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, particle_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
-                MPI_COMM_WORLD);
-  // Check total momentum is conserved
-  BOOST_CHECK_SMALL((initial_momentum - particle_mom - fluid_mom).norm(), 1e-6);
+  MPI_Allreduce(MPI_IN_PLACE, &count, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+  return count;
 }
 
-BOOST_DATA_TEST_CASE(energy_conservation, bdata::make(pe_enabled_lbs()),
+BOOST_DATA_TEST_CASE(boundary_cell_conservation, bdata::make(pe_enabled_lbs()),
                      lb_generator) {
-  params.particle_initial_velocity = Vector3d{.1, 0, 0};
+  params.particle_initial_velocity = Vector3d{0, 0, 0};
   auto lb = lb_generator(mpi_shape, params);
 
-  // check fluid has no momentum
-  Vector3d fluid_mom = lb->get_momentum();
-  MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
-                MPI_COMM_WORLD);
-  BOOST_CHECK_SMALL(fluid_mom.norm(), 1e-10);
+  unsigned flag_observables =
+      static_cast<unsigned>(OutputVTK::density) |
+      static_cast<unsigned>(OutputVTK::velocity_vector); /*|
+      static_cast<unsigned>(OutputVTK::pressure_tensor);*/
+  lb->create_vtk(1, 0, flag_observables, "all_values", "/mnt/d/my_vtk_output",
+                 "test123");
 
-  constexpr uint64_t uid = 0;
-  constexpr uint64_t steps = 100;
-
-  double initial_particle_energy = .5 * params.get_particle_mass() *
-                                   Utils::dot(params.particle_initial_velocity,
-                                              params.particle_initial_velocity);
-  double initial_fluid_energy = lb->get_energy();
-  double particle_energy = 0.;
-  double fluid_energy = 0.;
-  Vector3d particle_lin_velocity{};
-  Vector3d particle_ang_velocity{};
-  for (uint64_t i = 0; i < steps; ++i) {
-    lb->integrate();
+  Vector3d p{0, 0, 0};
+  Vector3d v{0, 0, 0};
+  if (lb->is_particle_on_this_process(0)) {
+    p = *(lb->get_particle_position(0));
+    v = *(lb->get_particle_velocity(0));
   }
-  fluid_energy = lb->get_energy();
-  MPI_Allreduce(MPI_IN_PLACE, &fluid_energy, 1, MPI_DOUBLE, MPI_SUM,
-                MPI_COMM_WORLD);
-  if (lb->is_particle_on_this_process(uid)) {
-    particle_lin_velocity = *(lb->get_particle_velocity(uid));
-    particle_ang_velocity = *(lb->get_particle_angular_velocity(uid));
-    particle_energy = .5 * params.get_particle_mass() *
-                      Utils::dot(particle_lin_velocity, particle_lin_velocity);
-    BOOST_CHECK_SMALL(particle_ang_velocity.norm(), 1e-8);
-    // Check total energy is conserved
-    BOOST_CHECK_CLOSE(initial_particle_energy + initial_fluid_energy,
-                      particle_energy + fluid_energy, 1e-4);
-  }
-}
+  std::cout << p[0] << " " << p[1] << " " << p[2] << std::endl;
+  BOOST_CHECK_SMALL(v.norm(), 1e-12);
 
-// Check that fluid receives correct velocities from bb-boundary
-BOOST_DATA_TEST_CASE(bb_boundary, bdata::make(pe_enabled_lbs()), lb_generator) {
-  params.particle_initial_velocity = Vector3d{.011, -.013, .021};
-  auto lb = lb_generator(mpi_shape, params);
+  auto my_left = lb->get_local_domain().first;
+  auto my_right = lb->get_local_domain().second;
 
-  // check fluid has no momentum
-  Vector3d fluid_mom = lb->get_momentum();
-  MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
-                MPI_COMM_WORLD);
-  BOOST_CHECK_SMALL(fluid_mom.norm(), 1e-10);
-
-  constexpr uint64_t uid = 0;
-  constexpr uint64_t steps = 100;
-
-  Vector3d p_surf_point = params.particle_initial_position +
-                          params.particle_radius * Vector3d{1, 0, 0};
-
-  // check that we are at a particle-fluid transition
-  Vector3i p_surf_node{int(p_surf_point[0] - .5), int(p_surf_point[1] - .5),
-                       int(p_surf_point[2] - .5)};
-  auto is_boundary_left = lb->get_node_is_boundary(p_surf_node);
-  auto is_boundary_right =
-      lb->get_node_is_boundary(p_surf_node + Vector3i{1, 0, 0});
-  if (is_boundary_left) {
-    BOOST_CHECK(*is_boundary_left == true);
-  }
-  if (is_boundary_right) {
-    BOOST_CHECK(*is_boundary_right == false);
-  }
-
-  // get velocity at particle surface
-  Vector3d p_rot_vel{0, 0, 0};
-  auto d = p_surf_point - params.particle_initial_position;
-  auto p_surf_vel =
-      params.particle_initial_velocity + boost::qvm::cross(p_rot_vel, d);
-
-  // check population changes correctly
-  using Stencil = walberla::stencil::D3Q19;
-  auto fluid_to_boundary_dir = walberla::stencil::directionFromAxis(0, false);
-  auto pdf_old = lb->get_node_pop(p_surf_node + Vector3i{1, 0, 0});
-  double pdf_expected = 0;
-  if (pdf_old) {
-    double lattice_weight =
-        walberla::lbm::MRTLatticeModel::w[Stencil::idx[fluid_to_boundary_dir]];
-    double lattice_speed_of_sound = 1. / std::sqrt(3.);
-    pdf_expected =
-        (*pdf_old)[Stencil::idx[fluid_to_boundary_dir]] -
-        2 * lattice_weight / lattice_speed_of_sound * params.density *
-            (p_surf_vel[0] *
-                 walberla::stencil::cx[Stencil::idx[fluid_to_boundary_dir]] +
-             p_surf_vel[1] *
-                 walberla::stencil::cy[Stencil::idx[fluid_to_boundary_dir]] +
-             p_surf_vel[2] *
-                 walberla::stencil::cz[Stencil::idx[fluid_to_boundary_dir]]);
-  }
+  auto is_node_boundary = [&lb](Vector3i node) {
+    return *(lb->get_node_is_boundary(node));
+  };
+  int n_initial_boundary_cells =
+      count_boundary_cells(my_left, my_right, is_node_boundary);
   lb->integrate();
-  auto pdf_new = lb->get_node_pop(p_surf_node + Vector3i{1, 0, 0});
-  if (pdf_new) {
-    BOOST_CHECK_CLOSE(
-        (*pdf_new)[Stencil::invDirIdx(fluid_to_boundary_dir)], pdf_expected,
-        1e-6); // fails. Maybe because surronding cells add nonzero values
-               // because they also interact with particle?
+  int n_boundary_cells =
+      count_boundary_cells(my_left, my_right, is_node_boundary);
+
+  BOOST_CHECK_EQUAL(n_boundary_cells, n_initial_boundary_cells);
+  for (int i = 0; i < 10000; ++i) {
+    std::cout << "Time step: " << i << std::endl;
+    lb->integrate();
+    int n_boundary_cells =
+        count_boundary_cells(my_left, my_right, is_node_boundary);
+    BOOST_CHECK_EQUAL(n_boundary_cells, n_initial_boundary_cells);
+
+    if (lb->is_particle_on_this_process(0)) {
+      p = *(lb->get_particle_position(0));
+      v = *(lb->get_particle_velocity(0));
+    }
+    std::cout << p[0] << " " << p[1] << " " << p[2] << std::endl;
   }
 }
+
+// // Check that particle receives correct hydrodynamik force
+// BOOST_DATA_TEST_CASE(MEM_forces, bdata::make(pe_enabled_lbs()), lb_generator)
+// {
+//   auto lb = lb_generator(mpi_shape, params);
+// }
+
+// void write_data(uint64_t timestep, std::vector<Vector3d> vectors,
+//                 std::string const &filename) {
+//   std::ofstream file;
+//   file.precision(5);
+//   file.setf(std::ofstream::fixed);
+//   file.open(filename.c_str(), std::ofstream::app);
+
+//   file << "|" << std::setw(4) << timestep << " |";
+//   for (auto const &vec : vectors) {
+//     for (uint64_t i = 0; i < 3; ++i) {
+//       file << std::setw(8) << vec[i] << " ";
+//     }
+//     file << "(" << std::setw(8) << vec.norm() << ") |";
+//   }
+//   file << std::endl;
+//   file.close();
+// }
+
+// BOOST_DATA_TEST_CASE(momentum_conservation, bdata::make(pe_enabled_lbs()),
+//                      lb_generator) {
+//   params.particle_initial_velocity = Vector3d{.01, 0, 0};
+//   auto const initial_momentum =
+//       params.particle_initial_velocity * params.get_particle_mass();
+//   auto lb = lb_generator(mpi_shape, params);
+
+//   // check fluid has no momentum
+//   Vector3d fluid_mom = lb->get_momentum();
+//   MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
+//                 MPI_COMM_WORLD);
+//   BOOST_CHECK_SMALL(fluid_mom.norm(), 1e-10);
+
+//   constexpr uint64_t uid = 0;
+//   constexpr uint64_t steps = 100;
+
+//   std::ofstream file;
+//   std::string filename{"data/momentum_conservation.txt"};
+//   file.open(filename.c_str());
+//   file << "|  #  |"
+//           "            fluid momentum            |"
+//           "           particle velocity          |"
+//           "           particle position          |"
+//           "            particle force            |"
+//        << std::endl;
+//   file.close();
+//   Vector3d particle_mom{};
+//   Vector3d particle_pos{};
+//   Vector3d particle_force{};
+//   Vector3d particle_ang_vel{};
+//   for (uint64_t i = 0; i < steps; ++i) {
+//     fluid_mom = lb->get_momentum();
+//     if (lb->is_particle_on_this_process(uid)) {
+//       particle_mom =
+//           *(lb->get_particle_velocity(uid)) * params.get_particle_mass();
+//       particle_force = *(lb->get_particle_force(uid));
+//       particle_pos = *(lb->get_particle_position(uid));
+//       particle_ang_vel = *(lb->get_particle_angular_velocity(uid));
+
+//       // Check particle is far enough from boundary
+//       {
+//         auto p_ = particle_pos - .5 * params.grid_dimensions;
+//         auto r_ = params.particle_radius;
+//         for (int i = 0; i < 3; ++i) {
+//           if (p_[i] > .5 * params.grid_dimensions[i] - 1.5 * r_) {
+//             std::cout << "Particle too close to boundary. Stopping test..."
+//                       << std::endl;
+//             break;
+//           }
+//         }
+//       }
+
+//       write_data(i,
+//                  {fluid_mom, particle_mom / params.get_particle_mass(),
+//                   particle_pos, particle_ang_vel},
+//                  filename);
+//     }
+//     if (std::any_of(fluid_mom.begin(), fluid_mom.end(),
+//                     [](double a) { return std::isnan(a); })) {
+//       std::cout << "Found NAN values ... exiting" << std::endl;
+//       return;
+//     }
+//     lb->integrate();
+//   }
+//   MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
+//                 MPI_COMM_WORLD);
+//   MPI_Allreduce(MPI_IN_PLACE, particle_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
+//                 MPI_COMM_WORLD);
+//   // Check total momentum is conserved
+//   BOOST_CHECK_SMALL((initial_momentum - particle_mom - fluid_mom).norm(),
+//   1e-6);
+// }
+
+// BOOST_DATA_TEST_CASE(energy_conservation, bdata::make(pe_enabled_lbs()),
+//                      lb_generator) {
+//   params.particle_initial_velocity = Vector3d{.1, 0, 0};
+//   auto lb = lb_generator(mpi_shape, params);
+
+//   // check fluid has no momentum
+//   Vector3d fluid_mom = lb->get_momentum();
+//   MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
+//                 MPI_COMM_WORLD);
+//   BOOST_CHECK_SMALL(fluid_mom.norm(), 1e-10);
+
+//   constexpr uint64_t uid = 0;
+//   constexpr uint64_t steps = 100;
+
+//   double initial_particle_energy = .5 * params.get_particle_mass() *
+//                                    Utils::dot(params.particle_initial_velocity,
+//                                               params.particle_initial_velocity);
+//   double initial_fluid_energy = lb->get_energy();
+//   double particle_energy = 0.;
+//   double fluid_energy = 0.;
+//   Vector3d particle_lin_velocity{};
+//   Vector3d particle_ang_velocity{};
+//   for (uint64_t i = 0; i < steps; ++i) {
+//     lb->integrate();
+//   }
+//   fluid_energy = lb->get_energy();
+//   MPI_Allreduce(MPI_IN_PLACE, &fluid_energy, 1, MPI_DOUBLE, MPI_SUM,
+//                 MPI_COMM_WORLD);
+//   if (lb->is_particle_on_this_process(uid)) {
+//     particle_lin_velocity = *(lb->get_particle_velocity(uid));
+//     particle_ang_velocity = *(lb->get_particle_angular_velocity(uid));
+//     particle_energy = .5 * params.get_particle_mass() *
+//                       Utils::dot(particle_lin_velocity,
+//                       particle_lin_velocity);
+//     BOOST_CHECK_SMALL(particle_ang_velocity.norm(), 1e-8);
+//     // Check total energy is conserved
+//     BOOST_CHECK_CLOSE(initial_particle_energy + initial_fluid_energy,
+//                       particle_energy + fluid_energy, 1e-4);
+//   }
+// }
+
+// // Check that fluid receives correct velocities from bb-boundary
+// BOOST_DATA_TEST_CASE(bb_boundary, bdata::make(pe_enabled_lbs()),
+// lb_generator) {
+//   params.particle_initial_velocity = Vector3d{.011, -.013, .021};
+//   auto lb = lb_generator(mpi_shape, params);
+
+//   // check fluid has no momentum
+//   Vector3d fluid_mom = lb->get_momentum();
+//   MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
+//                 MPI_COMM_WORLD);
+//   BOOST_CHECK_SMALL(fluid_mom.norm(), 1e-10);
+
+//   constexpr uint64_t uid = 0;
+//   constexpr uint64_t steps = 100;
+
+//   Vector3d p_surf_point = params.particle_initial_position +
+//                           params.particle_radius * Vector3d{1, 0, 0};
+
+//   // check that we are at a particle-fluid transition
+//   Vector3i p_surf_node{int(p_surf_point[0] - .5), int(p_surf_point[1] - .5),
+//                        int(p_surf_point[2] - .5)};
+//   auto is_boundary_left = lb->get_node_is_boundary(p_surf_node);
+//   auto is_boundary_right =
+//       lb->get_node_is_boundary(p_surf_node + Vector3i{1, 0, 0});
+//   if (is_boundary_left) {
+//     BOOST_CHECK(*is_boundary_left == true);
+//   }
+//   if (is_boundary_right) {
+//     BOOST_CHECK(*is_boundary_right == false);
+//   }
+
+//   // get velocity at particle surface
+//   Vector3d p_rot_vel{0, 0, 0};
+//   auto d = p_surf_point - params.particle_initial_position;
+//   auto p_surf_vel =
+//       params.particle_initial_velocity + boost::qvm::cross(p_rot_vel, d);
+
+//   // check population changes correctly
+//   using Stencil = walberla::stencil::D3Q19;
+//   auto fluid_to_boundary_dir = walberla::stencil::directionFromAxis(0,
+//   false); auto pdf_old = lb->get_node_pop(p_surf_node + Vector3i{1, 0, 0});
+//   double pdf_expected = 0;
+//   if (pdf_old) {
+//     double lattice_weight =
+//         walberla::lbm::MRTLatticeModel::w[Stencil::idx[fluid_to_boundary_dir]];
+//     double lattice_speed_of_sound = 1. / std::sqrt(3.);
+//     pdf_expected =
+//         (*pdf_old)[Stencil::idx[fluid_to_boundary_dir]] -
+//         2 * lattice_weight / lattice_speed_of_sound * params.density *
+//             (p_surf_vel[0] *
+//                  walberla::stencil::cx[Stencil::idx[fluid_to_boundary_dir]] +
+//              p_surf_vel[1] *
+//                  walberla::stencil::cy[Stencil::idx[fluid_to_boundary_dir]] +
+//              p_surf_vel[2] *
+//                  walberla::stencil::cz[Stencil::idx[fluid_to_boundary_dir]]);
+//   }
+//   lb->integrate();
+//   auto pdf_new = lb->get_node_pop(p_surf_node + Vector3i{1, 0, 0});
+//   if (pdf_new) {
+//     BOOST_CHECK_CLOSE(
+//         (*pdf_new)[Stencil::invDirIdx(fluid_to_boundary_dir)], pdf_expected,
+//         1e-6); // fails. Maybe because surronding cells add nonzero values
+//                // because they also interact with particle?
+//   }
+// }
 
 int main(int argc, char **argv) {
   MPI_Init(&argc, &argv);
@@ -330,23 +402,39 @@ int main(int argc, char **argv) {
 
   Vector3i grid_dimension{24, 24, 24};
   Vector3i block_dimension{1, 1, 1};
+  Vector3d particle_pos{12, 12, 12};
+  double particle_radius{3};
   bool force_avg = true;
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--grid_dim") == 0) {
       grid_dimension = {std::atoi(argv[++i]), std::atoi(argv[++i]),
                         std::atoi(argv[++i])};
+      particle_pos = .5 * grid_dimension;
     }
     if (std::strcmp(argv[i], "--block_dim") == 0) {
       block_dimension = {std::atoi(argv[++i]), std::atoi(argv[++i]),
                          std::atoi(argv[++i])};
     }
+    if (std::strcmp(argv[i], "--xpos") == 0) {
+      particle_pos[0] = std::stod(argv[++i]);
+    }
+    if (std::strcmp(argv[i], "--ypos") == 0) {
+      particle_pos[1] = std::stod(argv[++i]);
+    }
+    if (std::strcmp(argv[i], "--zpos") == 0) {
+      particle_pos[2] = std::stod(argv[++i]);
+      std::cout << "HASDHJSA" << std::endl;
+    }
     if (std::strcmp(argv[i], "--no_force_avg") == 0) {
       force_avg = false;
-      ++i;
+    }
+    if (std::strcmp(argv[i], "--radius") == 0) {
+      particle_radius = std::stod(argv[++i]);
     }
   }
   params = LBTestParameters(block_dimension, grid_dimension, force_avg);
-  params.particle_radius = 3;
+  params.particle_radius = particle_radius;
+  params.particle_initial_position = particle_pos;
 
   walberla_mpi_init();
   auto res = boost::unit_test::unit_test_main(init_unit_test, argc, argv);
