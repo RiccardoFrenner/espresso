@@ -430,7 +430,7 @@ IF LB_WALBERLA:
             if "pe_params" in self._params:
                 for force, name in self._params['pe_params'][0]:
                     for i in range(3):
-                        f[i] = force[i]
+                        f[i] = force[i] * self._params['tau']**2 / self._params['agrid'] # unit conversion (todo?)
                     p.first = f
                     p.second = utils.to_char_pointer(name)
                     forces.push_back(p)

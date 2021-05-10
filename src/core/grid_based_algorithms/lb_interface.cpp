@@ -690,8 +690,9 @@ void pe_add_particle(std::uint64_t uid, Utils::Vector3d const &pos,
 #ifdef LB_WALBERLA
     auto res = ::Communication::mpiCallbacks().call(
         ::Communication::Result::reduction, std::logical_or<>(),
-        Walberla::PE_Coupling::add_particle, uid, pos, radius, vel,
-        material_name);
+        Walberla::PE_Coupling::add_particle, uid, pos / lb_lbfluid_get_agrid(),
+        radius / lb_lbfluid_get_agrid(), vel / lb_lbfluid_get_lattice_speed(),
+        material_name); // unit conversion (todo?)
 #endif
   } else {
     throw NoLBActive();
@@ -794,7 +795,9 @@ void pe_set_particle_force(std::uint64_t uid, Utils::Vector3d const &f) {
 #ifdef LB_WALBERLA
     ::Communication::mpiCallbacks().call(
         ::Communication::Result::ignore,
-        Walberla::PE_Coupling::set_particle_force, uid, f);
+        Walberla::PE_Coupling::set_particle_force, uid,
+        f * lb_lbfluid_get_tau() /
+            lb_lbfluid_get_lattice_speed()); // unit conversion (todo?)
 #endif
   } else {
     throw NoLBActive();
@@ -806,7 +809,9 @@ void pe_add_particle_force(std::uint64_t uid, Utils::Vector3d const &f) {
 #ifdef LB_WALBERLA
     ::Communication::mpiCallbacks().call(
         ::Communication::Result::ignore,
-        Walberla::PE_Coupling::add_particle_force, uid, f);
+        Walberla::PE_Coupling::add_particle_force, uid,
+        f * lb_lbfluid_get_tau() /
+            lb_lbfluid_get_lattice_speed()); // unit conversion (todo?)
 #endif
   } else {
     throw NoLBActive();
@@ -818,7 +823,9 @@ void pe_set_particle_torque(std::uint64_t uid, Utils::Vector3d const &tau) {
 #ifdef LB_WALBERLA
     ::Communication::mpiCallbacks().call(
         ::Communication::Result::ignore,
-        Walberla::PE_Coupling::set_particle_torque, uid, tau);
+        Walberla::PE_Coupling::set_particle_torque, uid,
+        tau / lb_lbfluid_get_lattice_speed() /
+            lb_lbfluid_get_lattice_speed()); // unit conversion (todo?)
 #endif
   } else {
     throw NoLBActive();
@@ -830,7 +837,9 @@ void pe_add_particle_torque(std::uint64_t uid, Utils::Vector3d const &tau) {
 #ifdef LB_WALBERLA
     ::Communication::mpiCallbacks().call(
         ::Communication::Result::ignore,
-        Walberla::PE_Coupling::add_particle_torque, uid, tau);
+        Walberla::PE_Coupling::add_particle_torque, uid,
+        tau / lb_lbfluid_get_lattice_speed() /
+            lb_lbfluid_get_lattice_speed()); // unit conversion (todo?)
 #endif
   } else {
     throw NoLBActive();
@@ -877,8 +886,9 @@ void pe_create_particle_material(std::string const &name, double density,
   if (lattice_switch == ActiveLB::WALBERLA) {
 #ifdef LB_WALBERLA
     ::Communication::mpiCallbacks().call_all(
-        Walberla::PE_Coupling::create_particle_material, name, density, cor,
-        csf, cdf, poisson, young, stiffness, dampingN, dampingT);
+        Walberla::PE_Coupling::create_particle_material, name,
+        density * std::pow(lb_lbfluid_get_agrid(), 3), cor, csf, cdf, poisson,
+        young, stiffness, dampingN, dampingT); // unit conversion (todo?)
 #endif
   } else {
     throw NoLBActive();
