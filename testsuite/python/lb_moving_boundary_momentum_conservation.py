@@ -24,11 +24,11 @@ import numpy as np
 from itertools import count
 
 # Define the LB Parameters
-TIME_STEP = 0.008
-AGRID = .4
+TIME_STEP = 1 #0.008
+AGRID = 1 #.4
 GRID_SIZE = 12
 KVISC = 5e-3 * AGRID**2 / TIME_STEP
-DENS = AGRID**(-3)
+DENS = 1 #AGRID**(-3)
 F = 5.5 / GRID_SIZE**3
 # F = 0
 GAMMA = 1
