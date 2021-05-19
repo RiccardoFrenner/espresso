@@ -49,6 +49,7 @@
 #include "pe/utility/DestroyBody.h"
 
 // TODO: Remove unused headers
+#include "pe/vtk/SphereVtkOutput.h"
 #include "pe_coupling/mapping/all.h"
 #include "pe_coupling/momentum_exchange_method/all.h"
 #include "pe_coupling/utility/all.h"
@@ -80,6 +81,7 @@
 #include "LBWalberlaBase.hpp"
 #include "PE_Parameters.hpp"
 #include "ResetForce.hpp"
+#include "vtk/VTKOutput.h"
 #include "walberla_utils.hpp"
 
 #include <cassert>
@@ -379,8 +381,8 @@ private:
 
     if (using_moving_obstacles()) {
       // todo: remove
-      m_time_loop->addFuncAfterTimeStep(m_debug_timeloop_helper,
-                                        "Debug helper");
+      // m_time_loop->addFuncAfterTimeStep(m_debug_timeloop_helper,
+      //                                   "Debug helper");
 
       // Averaging the force/torque over two time steps is said to damp
       // oscillations of the interaction force/torque. See Ladd - " Numerical
@@ -412,13 +414,13 @@ private:
             "Swap FT container");
 
         // todo: remove
-        m_time_loop->addFuncAfterTimeStep(m_debug_timeloop_helper,
-                                          "Debug helper");
+        // m_time_loop->addFuncAfterTimeStep(m_debug_timeloop_helper,
+        //                                   "Debug helper");
       }
 
       // save force/torque before overriden by global force or reset by pe step
-      m_time_loop->addFuncAfterTimeStep(m_save_force_torque,
-                                        "Save force/torque");
+      // m_time_loop->addFuncAfterTimeStep(m_save_force_torque,
+      //                                   "Save force/torque");
 
       // add constant global forces
       for (auto &&t : m_pe_parameters.get_constant_global_forces()) {
@@ -445,7 +447,7 @@ private:
       // sweep for restoring PDFs in cells previously occupied by pe bodies
       m_time_loop->add() << timeloop::Sweep(
           pe_coupling::PDFReconstruction<LatticeModel, Boundaries,
-                                         Reconstructor>(
+                                         Reconstructor, true>(
               m_blocks, m_pdf_field_id, m_boundary_handling_id,
               m_body_storage_id, m_global_body_storage, m_body_field_id,
               *m_reconstructor, FormerMO_Flag, Fluid_flag),
@@ -637,7 +639,7 @@ private:
         true, true, true);            // periodicity
 
     // todo: remove
-    // debug_print_block_setup();
+    debug_print_block_setup();
   }
 
 public:
@@ -1210,6 +1212,15 @@ public:
     fluid_filter.addFlag(Fluid_flag);
     pdf_field_vtk->addCellInclusionFilter(fluid_filter);
 
+    std::shared_ptr<vtk::VTKOutput> bodyVTK;
+    if (using_moving_obstacles()) {
+      auto bodyVtkOutput = make_shared<pe::SphereVtkOutput>(
+          m_body_storage_id, m_blocks->getBlockStorage());
+      bodyVTK = vtk::createVTKOutput_PointData(
+          bodyVtkOutput, identifier + "_pe", uint_c(write_freq), base_folder,
+          prefix, true, true, true, true, uint_c(initial_count));
+    }
+
     // add writers
     if (static_cast<unsigned>(OutputVTK::density) & flag_observables) {
       pdf_field_vtk->addCellDataWriter(
@@ -1230,8 +1241,12 @@ public:
     // register object
     if (delta_N) {
       m_vtk_auto[vtk_uid] = {pdf_field_vtk, true};
+      if (using_moving_obstacles())
+        m_vtk_auto[vtk_uid + "_pe"] = {bodyVTK, true};
     } else {
       m_vtk_manual[vtk_uid] = pdf_field_vtk;
+      if (using_moving_obstacles())
+        m_vtk_manual[vtk_uid + "_pe"] = bodyVTK;
     }
   }
 
