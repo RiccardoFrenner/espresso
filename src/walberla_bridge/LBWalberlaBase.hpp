@@ -191,6 +191,8 @@ public:
                                         Utils::Quaternion<double> const &q) = 0;
   virtual boost::optional<Utils::Quaternion<double>>
   get_particle_orientation(std::uint64_t uid) const = 0;
+  virtual bool set_particle_position(std::uint64_t uid,
+                                     Utils::Vector3d const &pos) = 0;
   virtual boost::optional<Utils::Vector3d>
   get_particle_position(std::uint64_t uid) const = 0;
   virtual bool set_particle_force(std::uint64_t uid,
