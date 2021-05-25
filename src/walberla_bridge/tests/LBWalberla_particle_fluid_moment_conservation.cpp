@@ -17,8 +17,25 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "field/vtk/all.h"
+#include "lbm/vtk/all.h"
+#include "pe/vtk/BodyVtkOutput.h"
+#include "pe/vtk/SphereVtkOutput.h"
+#include "stencil/D3Q27.h"
+#include "vtk/all.h"
+
+#include "utils/constants.hpp"
+#include "utils/quaternion.hpp"
+#include <algorithm>
+#include <boost/math/constants/constants.hpp>
+#include <boost/qvm/vec_operations.hpp>
 #include <boost/test/tools/old/interface.hpp>
-#define BOOST_TEST_MODULE Walberla pe coupling
+#include <cmath>
+#include <cstdint>
+#include <fstream>
+#include <mpi.h>
+#include <sstream>
+#define BOOST_TEST_MODULE Walberla pe setters and getters test
 #define BOOST_TEST_DYN_LINK
 #include "config.hpp"
 
@@ -30,130 +47,179 @@
 #include <boost/test/data/test_case.hpp>
 #include <boost/test/unit_test.hpp>
 
-#include <LBWalberlaBase.hpp>
-#include <lb_walberla_init.hpp>
-
-#include <utils/Vector.hpp>
-
-#include <mpi.h>
-
-#include <cmath>
-#include <functional>
-#include <iostream>
 #include <memory>
+#include <string>
 #include <vector>
 
+#include "PE_Parameters.hpp"
 #include "tests_common.hpp"
+#include "utils/Vector.hpp"
+#include <lb_walberla_init.hpp>
 
-using Utils::hadamard_product;
+using Utils::Quaternion;
 using Utils::Vector3d;
 using Utils::Vector3i;
 
 namespace bdata = boost::unit_test::data;
 
-LBTestParameters params; // populated in main()
-Vector3i mpi_shape;      // populated in main
+void write_data(uint64_t timestep, std::vector<Vector3d> vectors,
+                std::string const &filename) {
+  std::ofstream file;
+  file.precision(5);
+  file.setf(std::ofstream::fixed);
+  file.open(filename, std::ofstream::app);
 
-// BOOST_DATA_TEST_CASE(momentum_zero, bdata::make(pe_enabled_lbs()),
-//                      lb_generator) {
-//   auto lb = lb_generator(mpi_shape, params);
-//   // create particle without velocity
-//   lb->create_particle_material("myMat", 1.16667, 0.5, 0.1, 0.1, 0.24, 200,
-//   200,
-//                                0, 0);
-//   std::uint64_t const uid = 42;
-//   lb->add_particle(uid, {1.5, 1.5, 1.5}, 7.5, {0, 0, 0}, "myMat");
-//   lb->finish_particle_adding();
-//   // check total momentum = 0
-//   auto fluid_mom = lb->get_momentum();
-//   MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
-//                 MPI_COMM_WORLD);
-//   Vector3d particle_mom{};
-//   if (lb->is_particle_on_this_process(uid)) {
-//     auto v = *(lb->get_particle_velocity(uid));
-//     auto m = *(lb->get_particle_mass(uid));
-//     particle_mom = v * m;
-//     BOOST_CHECK_SMALL((fluid_mom + particle_mom).norm(), 1E-10);
-//   }
-
-//   // total momentum still zero after some timesteps
-//   int const steps = 20;
-//   for (int i = 0; i < steps; ++i)
-//     lb->integrate();
-//   fluid_mom = lb->get_momentum();
-//   MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
-//                 MPI_COMM_WORLD);
-//   particle_mom.fill(0.);
-//   if (lb->is_particle_on_this_process(uid)) {
-//     auto v = *(lb->get_particle_velocity(uid));
-//     auto m = *(lb->get_particle_mass(uid));
-//     printf("fm: (%f, %f, %f)\n", fluid_mom[0], fluid_mom[1], fluid_mom[2]);
-//     printf("v : (%f, %f, %f)\n", v[0], v[1], v[2]);
-//     printf("m :  %f\n", m);
-//     particle_mom = v * m;
-//     BOOST_CHECK_SMALL((fluid_mom + particle_mom).norm(), 1E-10);
-//   }
-// }
-
-BOOST_DATA_TEST_CASE(momentum_conservation, bdata::make(pe_enabled_lbs()),
-                     lb_generator) {
-  auto lb = lb_generator(mpi_shape, params);
-  // create particle with velocity
-  lb->create_particle_material("myMat2", 1.16667, 0.5, 0.1, 0.1, 0.24, 200, 200,
-                               0, 0);
-  Vector3d vel{.1, .2, .3};
-  std::uint64_t const uid = 42;
-  lb->add_particle(uid, {10., 10., 10.}, 7.5, vel, "myMat2");
-  lb->finish_particle_adding();
-  // check fluid momentum = 0
-  auto fluid_mom = lb->get_momentum();
-  MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
-                MPI_COMM_WORLD);
-  BOOST_CHECK_SMALL(fluid_mom.norm(), 1E-10);
-
-  // momentum conservation after some timesteps
-  int const steps = 20;
-  for (int i = 0; i < steps; ++i) {
-    lb->integrate();
-    printf("i = %d\n", i);
+  file << "|" << std::setw(4) << timestep << " |";
+  for (auto const &vec : vectors) {
+    for (uint64_t i = 0; i < 3; ++i) {
+      file << std::setw(8) << vec[i] << " ";
+    }
+    file << "(" << std::setw(8) << vec.norm() << ") |";
   }
-  fluid_mom = lb->get_momentum();
-  MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
-                MPI_COMM_WORLD);
-  Vector3d particle_mom{};
-  Vector3d initial_mom{};
-  if (lb->is_particle_on_this_process(uid)) {
-    auto v = *(lb->get_particle_velocity(uid));
-    auto m = *(lb->get_particle_mass(uid));
-    printf("fm: (%f, %f, %f)\n", fluid_mom[0], fluid_mom[1], fluid_mom[2]);
-    printf("v : (%f, %f, %f)\n", v[0], v[1], v[2]);
-    printf("m :  %f\n", m);
-    particle_mom = v * m;
-    initial_mom = vel * m;
-    BOOST_CHECK_SMALL((fluid_mom + particle_mom - initial_mom).norm(), 1E-10);
-  }
+  file << std::endl;
+  file.close();
 }
 
-// BOOST_DATA_TEST_CASE(no_particle, bdata::make(pe_enabled_lbs()),
-// lb_generator) {
-//   auto lb = lb_generator(mpi_shape, params);
-//   // check fluid momentum = 0
-//   auto fluid_mom = lb->get_momentum();
-//   MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
-//                 MPI_COMM_WORLD);
-//   BOOST_CHECK_SMALL(fluid_mom.norm(), 1E-10);
+constexpr std::uint64_t P_UID = 0;
 
-//   // momentum conservation after some timesteps
-//   int const steps = 20;
-//   for (int i = 0; i < steps; ++i)
-//     lb->integrate();
-//   fluid_mom = lb->get_momentum();
-//   MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
-//                 MPI_COMM_WORLD);
-//   printf("fm: (%f, %f, %f)\n", fluid_mom[0], fluid_mom[1], fluid_mom[2]);
+// populated in main()
 
-//   BOOST_CHECK_SMALL(fluid_mom.norm(), 1E-10);
-// }
+// simulation control
+bool fileIO = false;
+int vtkIOFreq = 0;
+std::string base_folder = "data/LBWalberla_particle_fluid_moment_conservation";
+std::string logging_postfix = "";
+std::chrono::minutes max_simulation_minutes{5};
+
+// numerical parameters
+bool do_force_avg{false};
+Vector3i grid_dimensions{54, 54, 54};
+Vector3i mpi_shape;
+int time_steps{10};
+int reset_position_first_n_timesteps = 0;
+
+// physical setup
+double viscosity{1.};
+double density{1.};
+std::vector<std::pair<Utils::Vector3d, std::string>> p_ext_forces{};
+Vector3d p_init_vel{0, 0, 0};
+Vector3d p_init_pos{.5 * grid_dimensions};
+double p_radius{5};
+double p_density{1.1 * density};
+
+BOOST_AUTO_TEST_CASE(momentum_conservation) {
+  int n_ghost_layers{1};
+  PE_Parameters pe_params{p_ext_forces, 1, true, do_force_avg};
+  auto lb = walberla::LBWalberlaD3Q19MRT(viscosity, density, grid_dimensions,
+                                         mpi_shape, n_ghost_layers, pe_params);
+
+  lb.create_particle_material("Test material", p_density, 0.5, 0.1, 0.1, 0.24,
+                              200, 200, 0, 0);
+  lb.add_particle(0, p_init_pos, p_radius, p_init_vel, "Test material");
+  lb.finish_particle_adding();
+
+  // VTK
+  unsigned flag_observables = static_cast<unsigned>(OutputVTK::density) |
+                              static_cast<unsigned>(OutputVTK::velocity_vector);
+  lb.create_vtk(vtkIOFreq, 1, flag_observables, "total_mom", base_folder, "");
+
+  // Get particle attributes
+  double p_mass;
+  if (lb.is_particle_on_this_process(P_UID)) {
+    p_mass = *lb.get_particle_mass(P_UID);
+  }
+  Vector3d const initial_momentum = p_mass * p_init_vel;
+
+  // check fluid has no momentum
+  Vector3d fluid_mom = lb.get_momentum();
+  MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
+                MPI_COMM_WORLD);
+  BOOST_CHECK_SMALL(fluid_mom.norm(), 1e-10);
+
+  // data file
+  std::string loggingFileName(base_folder + "/additional_data");
+  loggingFileName += logging_postfix;
+  loggingFileName += ".txt";
+  if (lb.is_particle_on_this_process(P_UID)) {
+    std::ofstream file;
+    file.open(loggingFileName);
+    file << "Settings: "
+         << "mpi_shape=" << mpi_shape << "|"
+         << "grid_dimensions=" << grid_dimensions << "|"
+         << "do_force_avg=" << do_force_avg << "|"
+         << "p_init_vel=" << p_init_vel << "|"
+         << "p_init_pos=" << p_init_pos << "|"
+         << "p_radius=" << p_radius << "|"
+         << "viscosity=" << viscosity << "|"
+         << "p_density=" << p_density << "|"
+         << "time_steps=" << time_steps << "|"
+         << "n_ghost_layers=" << n_ghost_layers << "|"
+         << "density=" << density << std::endl;
+    file << "|  #  |"
+            "            fluid momentum            |"
+            "           particle momentum          |"
+            "           particle position          |"
+            "            particle force            |"
+         << std::endl;
+    file.close();
+  }
+
+  Vector3d particle_mom{};
+  Vector3d particle_pos{};
+  Vector3d particle_force{};
+  Vector3d particle_ang_vel{};
+  auto t0 = std::chrono::system_clock::now();
+  for (uint64_t i = 0; i < time_steps; ++i) {
+    if (std::chrono::system_clock::now() - t0 > max_simulation_minutes) {
+      break;
+    }
+    if ((time_steps < 10) || (i % (time_steps / 10) == 0)) {
+      if (lb.is_particle_on_this_process(P_UID))
+        std::cout << "Timestep: " << i << std::endl;
+    }
+    fluid_mom = lb.get_momentum();
+    MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
+                  MPI_COMM_WORLD);
+    if (lb.is_particle_on_this_process(P_UID)) {
+      particle_mom = *(lb.get_particle_velocity(P_UID)) * p_mass;
+      particle_force = *(lb.get_particle_force(P_UID));
+      particle_pos = *(lb.get_particle_position(P_UID));
+      particle_ang_vel = *(lb.get_particle_angular_velocity(P_UID));
+
+      // Check particle is far enough from boundary
+      {
+        auto p_ = particle_pos - .5 * grid_dimensions;
+        for (int i = 0; i < 3; ++i) {
+          if (p_[i] > .5 * grid_dimensions[i] - 1.5 * p_radius) {
+            std::cout << "Particle too close to boundary. Stopping test..."
+                      << std::endl;
+            break;
+          }
+        }
+      }
+
+      write_data(i, {fluid_mom, particle_mom, particle_pos, particle_force},
+                 loggingFileName);
+    }
+    if (std::any_of(fluid_mom.begin(), fluid_mom.end(),
+                    [](double a) { return std::isnan(a); })) {
+      std::cout << "Found NAN values ... exiting" << std::endl;
+      return;
+    }
+    lb.integrate();
+    if (reset_position_first_n_timesteps > 0 &&
+        i < reset_position_first_n_timesteps) {
+      lb.set_particle_position(P_UID, p_init_pos);
+      if (lb.is_particle_on_this_process(P_UID))
+        std::cout << "Resetting particle position ..." << std::endl;
+    }
+  }
+  MPI_Allreduce(MPI_IN_PLACE, particle_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
+                MPI_COMM_WORLD);
+  // Check total momentum is conserved
+  auto const measured_mom = particle_mom + fluid_mom;
+  BOOST_CHECK_SMALL((initial_momentum - measured_mom).norm(), 1e-6);
+}
 
 int main(int argc, char **argv) {
   MPI_Init(&argc, &argv);
@@ -162,16 +228,110 @@ int main(int argc, char **argv) {
   MPI_Comm_size(MPI_COMM_WORLD, &n_nodes);
   MPI_Dims_create(n_nodes, 3, mpi_shape.data());
 
-  // params.viscosity = 0.003;
-  // params.kT = 1.3E-4;
-  // params.density = 1.4;
-  // params.grid_dimensions = Vector3i{12, 12, 18};
-  // params.box_dimensions = Vector3d{12, 12, 18};
-  params.viscosity = 0.00494246;
-  params.kT = 0.;
-  params.density = 1.0;
-  params.grid_dimensions = Vector3i{100, 100, 160};
-  // params.box_dimensions = Vector3d{12, 12, 18};
+  double acceleration = 0;
+  for (int i = 1; i < argc; ++i) {
+    if (std::strcmp(argv[i], "--") == 0) { // Needed because of boost-test
+      continue;
+    }
+
+    // Flags
+    if (std::strcmp(argv[i], "--withForceAvg") == 0) {
+      do_force_avg = true;
+      continue;
+    }
+    if (std::strcmp(argv[i], "--fileIO") == 0) {
+      fileIO = true;
+      continue;
+    }
+
+    // Key-value pairs
+    if (std::strcmp(argv[i], "--vtkFreq") == 0) {
+      vtkIOFreq = std::atoi(argv[++i]);
+      continue;
+    }
+    if (std::strcmp(argv[i], "--baseFolder") == 0) {
+      base_folder = argv[++i];
+      continue;
+    }
+    if (std::strcmp(argv[i], "--logpostfix") == 0) {
+      logging_postfix = argv[++i];
+      continue;
+    }
+    if (std::strcmp(argv[i], "--minutes") == 0) {
+      max_simulation_minutes = std::chrono::minutes(std::atoi(argv[++i]));
+      continue;
+    }
+    if (std::strcmp(argv[i], "--timesteps") == 0) {
+      time_steps = std::atoi(argv[++i]);
+      continue;
+    }
+    if (std::strcmp(argv[i], "--resolution") == 0) {
+      int r = std::atoi(argv[++i]);
+      grid_dimensions = {r, r, r};
+      p_init_pos = .5 * grid_dimensions;
+      continue;
+    }
+    if (std::strcmp(argv[i], "--gridDim") == 0) {
+      grid_dimensions = {std::atoi(argv[++i]), std::atoi(argv[++i]),
+                         std::atoi(argv[++i])};
+      p_init_pos = .5 * grid_dimensions;
+      continue;
+    }
+    if (std::strcmp(argv[i], "--resetPos") == 0) {
+      reset_position_first_n_timesteps = std::atoi(argv[++i]);
+      continue;
+    }
+    if (std::strcmp(argv[i], "--visc") == 0) {
+      viscosity = std::stod(argv[++i]);
+      continue;
+    }
+    if (std::strcmp(argv[i], "--pdens") == 0) {
+      p_density = std::stod(argv[++i]);
+      continue;
+    }
+    if (std::strcmp(argv[i], "--radius") == 0) {
+      p_radius = std::stod(argv[++i]);
+      continue;
+    }
+    if (std::strcmp(argv[i], "--xpos") == 0) {
+      p_init_pos[0] = std::stod(argv[++i]);
+      continue;
+    }
+    if (std::strcmp(argv[i], "--ypos") == 0) {
+      p_init_pos[1] = std::stod(argv[++i]);
+      continue;
+    }
+    if (std::strcmp(argv[i], "--zpos") == 0) {
+      p_init_pos[2] = std::stod(argv[++i]);
+      continue;
+    }
+    if (std::strcmp(argv[i], "--xvel") == 0) {
+      p_init_vel[0] = std::stod(argv[++i]);
+      continue;
+    }
+    if (std::strcmp(argv[i], "--yvel") == 0) {
+      p_init_vel[1] = std::stod(argv[++i]);
+      continue;
+    }
+    if (std::strcmp(argv[i], "--zvel") == 0) {
+      p_init_vel[2] = std::stod(argv[++i]);
+      continue;
+    }
+    if (std::strcmp(argv[i], "--acc") == 0) {
+      acceleration = std::atoi(argv[++i]);
+      continue;
+    }
+    std::cout << "Unrecognized command line argument found: " << argv[i]
+              << std::endl;
+    return 1;
+  }
+
+  double const p_volume =
+      4. / 3. * boost::math::double_constants::pi * std::pow(p_radius, 3);
+  Vector3d const fz{0, 0, (p_density - density) * acceleration * p_volume};
+  if (std::abs(fz[2]) > 1e-16) {
+    p_ext_forces.emplace_back(fz, "");
+  }
 
   walberla_mpi_init();
   auto res = boost::unit_test::unit_test_main(init_unit_test, argc, argv);
@@ -179,6 +339,6 @@ int main(int argc, char **argv) {
   return res;
 }
 
-#else // ifdef LB_WALBERLA
+#else  // ifdef LB_WALBERLA
 int main(int argc, char **argv) {}
-#endif
+#endif // ifdef LB_WALBERLA
