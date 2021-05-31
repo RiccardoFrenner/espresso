@@ -95,14 +95,14 @@ std::chrono::minutes max_simulation_minutes{5};
 bool do_force_avg{false};
 Vector3i grid_dimensions{54, 54, 54};
 Vector3i mpi_shape;
-int time_steps{10};
+int time_steps{20};
 int reset_position_first_n_timesteps = 0;
 
 // physical setup
 double viscosity{1.};
 double density{1.};
 std::vector<std::pair<Utils::Vector3d, std::string>> p_ext_forces{};
-Vector3d p_init_vel{0, 0, 0};
+Vector3d p_init_vel{0, 0, 0.001};
 Vector3d p_init_pos{.5 * grid_dimensions};
 double p_radius{5};
 double p_density{1.1 * density};
@@ -124,10 +124,11 @@ BOOST_AUTO_TEST_CASE(momentum_conservation) {
   lb.create_vtk(vtkIOFreq, 1, flag_observables, "total_mom", base_folder, "");
 
   // Get particle attributes
-  double p_mass;
+  double p_mass = 0;
   if (lb.is_particle_on_this_process(P_UID)) {
     p_mass = *lb.get_particle_mass(P_UID);
   }
+  MPI_Allreduce(MPI_IN_PLACE, &p_mass, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   Vector3d const initial_momentum = p_mass * p_init_vel;
 
   // check fluid has no momentum
@@ -140,7 +141,7 @@ BOOST_AUTO_TEST_CASE(momentum_conservation) {
   std::string loggingFileName(base_folder + "/additional_data");
   loggingFileName += logging_postfix;
   loggingFileName += ".txt";
-  if (lb.is_particle_on_this_process(P_UID)) {
+  if (lb.is_particle_on_this_process(P_UID) && fileIO) {
     std::ofstream file;
     file.open(loggingFileName);
     file << "Settings: "
@@ -164,7 +165,7 @@ BOOST_AUTO_TEST_CASE(momentum_conservation) {
     file.close();
   }
 
-  Vector3d particle_mom{};
+  Vector3d particle_mom{0, 0, 0};
   Vector3d particle_pos{};
   Vector3d particle_force{};
   Vector3d particle_ang_vel{};
@@ -198,8 +199,10 @@ BOOST_AUTO_TEST_CASE(momentum_conservation) {
         }
       }
 
-      write_data(i, {fluid_mom, particle_mom, particle_pos, particle_force},
-                 loggingFileName);
+      if (fileIO) {
+        write_data(i, {fluid_mom, particle_mom, particle_pos, particle_force},
+                   loggingFileName);
+      }
     }
     if (std::any_of(fluid_mom.begin(), fluid_mom.end(),
                     [](double a) { return std::isnan(a); })) {
@@ -218,7 +221,7 @@ BOOST_AUTO_TEST_CASE(momentum_conservation) {
                 MPI_COMM_WORLD);
   // Check total momentum is conserved
   auto const measured_mom = particle_mom + fluid_mom;
-  BOOST_CHECK_SMALL((initial_momentum - measured_mom).norm(), 1e-6);
+  BOOST_CHECK_SMALL((initial_momentum - measured_mom).norm(), 1e-5);
 }
 
 int main(int argc, char **argv) {
