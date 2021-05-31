@@ -99,7 +99,7 @@ int time_steps{20};
 int reset_position_first_n_timesteps = 0;
 
 // physical setup
-double viscosity{1.};
+double viscosity{5e-3};
 double density{1.};
 std::vector<std::pair<Utils::Vector3d, std::string>> p_ext_forces{};
 Vector3d p_init_vel{0, 0, 0.001};
