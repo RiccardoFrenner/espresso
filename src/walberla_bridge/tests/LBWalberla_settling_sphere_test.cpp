@@ -39,33 +39,26 @@ using walberla::LBWalberlaD3Q19MRT;
 
 Vector3i mpi_shape;
 
+// simulation control
+bool shortrun = false;
+bool func_test = false;
+bool file_io = true;
+int vtk_io_freq = 0;
+std::string base_folder = "vtk_out_SettlingSphere";
+
+// physical setup
+uint_t fluid_type = 1;
+
+// numerical parameters
+uint_t n_horizontal_cells = 100;
+bool average_force_torque_over_two_timesteps = true;
+
 // Recreation of Walberla's SettlingSphere test
 BOOST_AUTO_TEST_CASE(settling_sphere) {
-
-  // TODO: Add those as commandline arguments
-  // simulation control
-  bool shortrun = false;
-  bool func_test = false;
-  bool file_io = true;
-  std::string base_folder = "vtk_out_SettlingSphere";
-  uint_t fluid_type = 4;
-
-  // numerical parameters
-  // uint_t n_horizontal_cells = 100; // Original value
-  uint_t n_horizontal_cells = 90;
-  bool average_force_torque_over_two_timesteps = true;
 
   if (func_test) {
     walberla::logging::Logging::instance()->setLogLevel(
         walberla::logging::Logging::LogLevel::WARNING);
-  }
-
-  // TODO: Change to other filesystem (Espresso / std ?)
-  if (file_io) {
-    // create base directory if it does not yet exist
-    walberla::filesystem::path tpath(base_folder);
-    if (!walberla::filesystem::exists(tpath))
-      walberla::filesystem::create_directory(tpath);
   }
 
   //////////////////////////////////////
@@ -112,8 +105,7 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
       dynamic_viscosity_fluid_SI / density_fluid_SI;
 
   const double gravitational_acceleration_SI = 9.81;
-  // Vector3d domain_size_SI{100e-3, 100e-3, 160e-3}; // Original values
-  Vector3d domain_size_SI{90e-3, 90e-3, 150e-3};
+  Vector3d domain_size_SI{100e-3, 100e-3, 160e-3};
   // shift starting gap a bit upwards to match the reported (plotted) values
   const double starting_gap_size_SI = 120e-3 + 0.25 * diameter_SI;
 
@@ -154,7 +146,7 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
   // BLOCK STRUCTURE SETUP //
   ///////////////////////////
 
-  Vector3i n_blocks_per_direction{3, 3, 3};
+  Vector3i n_blocks_per_direction{5, 5, 8};
   Vector3i n_cells_per_block_per_direction{
       domain_size[0] / n_blocks_per_direction[0],
       domain_size[1] / n_blocks_per_direction[1],
@@ -246,9 +238,6 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
   double max_velocity = 0.0;
   for (uint_t i = 0; i < timesteps; ++i) {
     WALBERLA_LOG_INFO_ON_ROOT("Timestep " << i << ": ");
-    if (i == 16) {
-      WALBERLA_LOG_INFO_ON_ROOT("AUFPASSEN");
-    }
     // perform a single simulation step
     lb->integrate();
 
@@ -326,6 +315,46 @@ int main(int argc, char **argv) {
 
   MPI_Comm_size(MPI_COMM_WORLD, &n_nodes);
   MPI_Dims_create(n_nodes, 3, mpi_shape.data());
+
+  for (int i = 1; i < argc; ++i) {
+    if (std::strcmp(argv[i], "--") == 0) { // Needed because of boost-test
+      continue;
+    }
+
+    if (std::strcmp(argv[i], "--shortrun") == 0) {
+      shortrun = true;
+      continue;
+    }
+    if (std::strcmp(argv[i], "--funcTest") == 0) {
+      func_test = true;
+      continue;
+    }
+    if (std::strcmp(argv[i], "--fileIO") == 0) {
+      file_io = true;
+      continue;
+    }
+    if (std::strcmp(argv[i], "--vtkIOFreq") == 0) {
+      vtk_io_freq = std::atoi(argv[++i]);
+      continue;
+    }
+    if (std::strcmp(argv[i], "--fluidType") == 0) {
+      fluid_type = std::atoi(argv[++i]);
+      continue;
+    }
+    if (std::strcmp(argv[i], "--resolution") == 0) {
+      n_horizontal_cells = std::atoi(argv[++i]);
+      continue;
+    }
+    if (std::strcmp(argv[i], "--noForceAveraging") == 0) {
+      average_force_torque_over_two_timesteps = false;
+      continue;
+    }
+    if (std::strcmp(argv[i], "--baseFolder") == 0) {
+      base_folder = argv[++i];
+      continue;
+    }
+    WALBERLA_ABORT("Unrecognized command line argument found: " << argv[i]);
+  }
 
   walberla_mpi_init();
   auto res = boost::unit_test::unit_test_main(init_unit_test, argc, argv);
