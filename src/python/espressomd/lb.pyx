@@ -526,8 +526,8 @@ IF LB_WALBERLA:
                 obj = VTKOutputManual(*args)
             return obj
 
-        def create_particle_material(self, name, density=7.874, cor=.5, csf=.1,
-                                     cdf=.1, poisson=.24, young=200,
+        def create_particle_material(self, name, density, cor=0.5, csf=0.1,
+                                     cdf=0.1, poisson=0.24, young=200,
                                      stiffness=200, dampingN=0, dampingT=0):
             """Creates a new custom material which is used by the pe particles.
                Uses iron properties for not specified values.
@@ -555,6 +555,9 @@ IF LB_WALBERLA:
             dampingT : :obj:`float`
                 The damping coefficient in tangential direction of the material's contact region.
             """
+            # Unit conversion
+            density *= self._params['agrid']**3
+
             pe_create_particle_material(utils.to_char_pointer(name), density, cor, csf, cdf, poisson, young, stiffness, dampingN, dampingT)
 
         def add_particle(self, uid, pos, radius, vel=[0,0,0], material_name="iron"):
