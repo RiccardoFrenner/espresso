@@ -25,7 +25,7 @@ public:
   PE_Parameters(ForceList _constant_global_forces = {},
                 std::uint32_t _num_pe_sub_cycles = 1,
                 bool _sync_shadow_owners = true,
-                bool _average_force_torque_over_two_timesteps = true,
+                bool _average_force_torque_over_two_timesteps = false,
                 double _syncronization_overlap_factor = 1.5)
       : m_use_moving_obstacles(true),
         m_constant_global_forces(std::move(_constant_global_forces)),
