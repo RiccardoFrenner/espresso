@@ -58,6 +58,23 @@ private:
   void serialize(Archive &ar, const unsigned int /* version */) {
     ar &m_use_moving_obstacles;
   }
+
+  friend std::ostream &operator<<(std::ostream &os,
+                                  PE_Parameters const &pe_params) {
+    if (pe_params.is_activated()) {
+      os << "PE_Parameters({";
+      for (auto const &f : pe_params.get_constant_global_forces()) {
+        os << "{{" << f.first << "}, " << f.second << "}";
+      }
+      os << "}, " << pe_params.get_num_pe_sub_cycles() << ", "
+         << pe_params.get_sync_shadow_owners() << ", "
+         << pe_params.get_average_force_torque_over_two_timesteps() << ", "
+         << pe_params.get_syncronization_overlap_factor() << ")";
+    } else {
+      os << "PE_Parameters::deactivated";
+    }
+    return os;
+  }
 };
 
 #endif
