@@ -92,7 +92,6 @@ class Momentum(object):
         np.testing.assert_allclose(initial_momentum, np.copy(p_v) * P_MASS)
 
         steps_per_it = 10
-        print(initial_momentum)
         for _ in range(20):
             self.system.integrator.run(steps_per_it)
 
