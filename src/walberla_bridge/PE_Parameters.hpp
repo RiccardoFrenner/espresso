@@ -2,6 +2,8 @@
 #define PE_PARAMETERS_H
 
 #include <boost/serialization/access.hpp>
+#include <boost/serialization/utility.hpp>
+#include <boost/serialization/vector.hpp>
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -57,6 +59,11 @@ private:
   template <typename Archive>
   void serialize(Archive &ar, const unsigned int /* version */) {
     ar &m_use_moving_obstacles;
+    ar &m_constant_global_forces;
+    ar &m_num_pe_sub_cycles;
+    ar &m_sync_shadow_owners;
+    ar &m_average_force_torque_over_two_timesteps;
+    ar &m_syncronization_overlap_factor;
   }
 
   friend std::ostream &operator<<(std::ostream &os,
