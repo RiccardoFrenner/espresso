@@ -65,17 +65,24 @@ namespace bdata = boost::unit_test::data;
 void write_data(uint64_t timestep, std::vector<Vector3d> vectors,
                 std::string const &filename) {
   std::ofstream file;
-  file.precision(5);
-  file.setf(std::ofstream::fixed);
+  // file.precision(5);
+  // file.setf(std::ofstream::fixed);
   file.open(filename, std::ofstream::app);
 
-  file << "|" << std::setw(4) << timestep << " |";
+  file << timestep << "\t";
   for (auto const &vec : vectors) {
     for (uint64_t i = 0; i < 3; ++i) {
-      file << std::setw(8) << vec[i] << " ";
+      file << vec[i] << "\t";
     }
-    file << "(" << std::setw(8) << vec.norm() << ") |";
   }
+
+  // file << "|" << std::setw(4) << timestep << " |";
+  // for (auto const &vec : vectors) {
+  //   for (uint64_t i = 0; i < 3; ++i) {
+  //     file << std::setw(8) << vec[i] << " ";
+  //   }
+  //   file << "(" << std::setw(8) << vec.norm() << ") |";
+  // }
   file << std::endl;
   file.close();
 }
@@ -99,15 +106,19 @@ int time_steps{20};
 int reset_position_first_n_timesteps = 0;
 
 // physical setup
-double viscosity{5e-3};
+double viscosity{0.1};
 double density{1.};
 std::vector<std::pair<Utils::Vector3d, std::string>> p_ext_forces{};
-Vector3d p_init_vel{0, 0, 0.001};
+Vector3d p_init_vel{0, 0, 1e-3};
 Vector3d p_init_pos{.5 * grid_dimensions};
-double p_radius{5};
-double p_density{1.1 * density};
+double p_radius{7.5};
+double p_density{1.16 * density};
 
 BOOST_AUTO_TEST_CASE(momentum_conservation) {
+  std::cout << "Reynolds number = " << p_init_vel[2] * 2 * p_radius / viscosity
+            << std::endl;
+  BOOST_CHECK_LT(p_init_vel[2] * 2 * p_radius / viscosity, 1.5);
+
   int n_ghost_layers{1};
   PE_Parameters pe_params{p_ext_forces, 1, true, do_force_avg};
   auto lb = walberla::LBWalberlaD3Q19MRT(viscosity, density, grid_dimensions,
@@ -159,11 +170,24 @@ BOOST_AUTO_TEST_CASE(momentum_conservation) {
          << "time_steps=" << time_steps << "|"
          << "n_ghost_layers=" << n_ghost_layers << "|"
          << "density=" << density << std::endl;
-    file << "|  #  |"
-            "            fluid momentum            |"
-            "           particle momentum          |"
-            "           particle position          |"
-            "            particle force            |"
+    file << "#\t"
+         << "fluid mom x\t"
+         << "fluid mom y\t"
+         << "fluid mom z\t"
+         << "particle mom x\t"
+         << "particle mom y\t"
+         << "particle mom z\t"
+         << "particle pos x\t"
+         << "particle pos y\t"
+         << "particle pos z\t"
+         << "particle force x\t"
+         << "particle force y\t"
+         << "particle force z\t"
+         // file << "|  #  |"
+         //         "            fluid momentum            |"
+         //         "           particle momentum          |"
+         //         "           particle position          |"
+         //         "            particle force            |"
          << std::endl;
     file.close();
   }
@@ -215,8 +239,8 @@ BOOST_AUTO_TEST_CASE(momentum_conservation) {
     lb.integrate();
     if (reset_position_first_n_timesteps > 0 &&
         i < reset_position_first_n_timesteps) {
-      lb.set_particle_position(P_UID, p_init_pos);
-      if (lb.is_particle_on_this_process(P_UID))
+      bool b = lb.set_particle_position(P_UID, p_init_pos);
+      if (lb.is_particle_on_this_process(P_UID) && b)
         std::cout << "Resetting particle position ..." << std::endl;
     }
   }
@@ -227,75 +251,78 @@ BOOST_AUTO_TEST_CASE(momentum_conservation) {
   BOOST_CHECK_SMALL((initial_momentum - measured_mom).norm(), 1e-5);
 }
 
-BOOST_AUTO_TEST_CASE(multi_momentum_conservation) {
-  int n_ghost_layers{1};
-  PE_Parameters pe_params{p_ext_forces, 1, true, do_force_avg};
-  auto lb = walberla::LBWalberlaD3Q19MRT(viscosity, density, {63, 63, 63},
-                                         mpi_shape, n_ghost_layers, pe_params);
+// BOOST_AUTO_TEST_CASE(multi_momentum_conservation) {
+//   int n_ghost_layers{1};
+//   PE_Parameters pe_params{p_ext_forces, 1, true, do_force_avg};
+//   auto lb = walberla::LBWalberlaD3Q19MRT(viscosity, density, {63, 63, 63},
+//                                          mpi_shape, n_ghost_layers,
+//                                          pe_params);
 
-  lb.create_particle_material("Test material", p_density, 0.5, 0.1, 0.1, 0.24,
-                              200, 200, 0, 0);
-  lb.add_particle(0, {10, 10, 10}, p_radius, p_init_vel, "Test material");
-  lb.add_particle(1, {53, 53, 53}, p_radius, -p_init_vel, "Test material");
-  lb.finish_particle_adding();
+//   lb.create_particle_material("Test material", p_density, 0.5, 0.1, 0.1,
+//   0.24,
+//                               200, 200, 0, 0);
+//   lb.add_particle(0, {10, 10, 10}, p_radius, p_init_vel, "Test material");
+//   lb.add_particle(1, {53, 53, 53}, p_radius, -p_init_vel, "Test material");
+//   lb.finish_particle_adding();
 
-  // VTK
-  if (vtkIOFreq > 0) {
-    unsigned flag_observables =
-        static_cast<unsigned>(OutputVTK::density) |
-        static_cast<unsigned>(OutputVTK::velocity_vector);
-    lb.create_vtk(vtkIOFreq, 1, flag_observables, "multi_total_mom",
-                  base_folder, "");
-  }
+//   // VTK
+//   if (vtkIOFreq > 0) {
+//     unsigned flag_observables =
+//         static_cast<unsigned>(OutputVTK::density) |
+//         static_cast<unsigned>(OutputVTK::velocity_vector);
+//     lb.create_vtk(vtkIOFreq, 1, flag_observables, "multi_total_mom",
+//                   base_folder, "");
+//   }
 
-  // Get particle attributes
-  double p_mass = 0;
-  if (lb.is_particle_on_this_process(P_UID)) {
-    p_mass = *lb.get_particle_mass(P_UID);
-  }
+//   // Get particle attributes
+//   double p_mass = 0;
+//   if (lb.is_particle_on_this_process(P_UID)) {
+//     p_mass = *lb.get_particle_mass(P_UID);
+//   }
 
-  // Particle mass should be the same on all processes
-  MPI_Allreduce(MPI_IN_PLACE, &p_mass, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+//   // Particle mass should be the same on all processes
+//   MPI_Allreduce(MPI_IN_PLACE, &p_mass, 1, MPI_DOUBLE, MPI_SUM,
+//   MPI_COMM_WORLD);
 
-  // check fluid has no momentum
-  Vector3d fluid_mom = lb.get_momentum();
-  MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
-                MPI_COMM_WORLD);
-  BOOST_CHECK_SMALL(fluid_mom.norm(), 1e-10);
+//   // check fluid has no momentum
+//   Vector3d fluid_mom = lb.get_momentum();
+//   MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
+//                 MPI_COMM_WORLD);
+//   BOOST_CHECK_SMALL(fluid_mom.norm(), 1e-10);
 
-  Vector3d const initial_momentum = fluid_mom;
+//   Vector3d const initial_momentum = fluid_mom;
 
-  Vector3d particle_mom_1{0, 0, 0};
-  Vector3d particle_mom_2{0, 0, 0};
-  auto t0 = std::chrono::system_clock::now();
-  for (uint64_t i = 0; i < time_steps; ++i) {
-    if (std::chrono::system_clock::now() - t0 > max_simulation_minutes) {
-      break;
-    }
-    if ((time_steps < 10) || (i % (time_steps / 10) == 0)) {
-      int rank;
-      MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-      if (rank == 0)
-        std::cout << "Timestep: " << i << std::endl;
-    }
-    lb.integrate();
-  }
+//   Vector3d particle_mom_1{0, 0, 0};
+//   Vector3d particle_mom_2{0, 0, 0};
+//   auto t0 = std::chrono::system_clock::now();
+//   for (uint64_t i = 0; i < time_steps; ++i) {
+//     if (std::chrono::system_clock::now() - t0 > max_simulation_minutes) {
+//       break;
+//     }
+//     if ((time_steps < 10) || (i % (time_steps / 10) == 0)) {
+//       int rank;
+//       MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+//       if (rank == 0)
+//         std::cout << "Timestep: " << i << std::endl;
+//     }
+//     lb.integrate();
+//   }
 
-  fluid_mom = lb.get_momentum();
-  if (lb.is_particle_on_this_process(0))
-    particle_mom_1 = *lb.get_particle_velocity(0) * p_mass;
-  if (lb.is_particle_on_this_process(1))
-    particle_mom_2 = *lb.get_particle_velocity(1) * p_mass;
-  MPI_Allreduce(MPI_IN_PLACE, particle_mom_1.data(), 3, MPI_DOUBLE, MPI_SUM,
-                MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, particle_mom_2.data(), 3, MPI_DOUBLE, MPI_SUM,
-                MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
-                MPI_COMM_WORLD);
-  // Check total momentum is conserved
-  auto const measured_mom = particle_mom_1 + particle_mom_2 + fluid_mom;
-  BOOST_CHECK_SMALL((initial_momentum - measured_mom).norm(), 1e-5);
-}
+//   fluid_mom = lb.get_momentum();
+//   if (lb.is_particle_on_this_process(0))
+//     particle_mom_1 = *lb.get_particle_velocity(0) * p_mass;
+//   if (lb.is_particle_on_this_process(1))
+//     particle_mom_2 = *lb.get_particle_velocity(1) * p_mass;
+//   MPI_Allreduce(MPI_IN_PLACE, particle_mom_1.data(), 3, MPI_DOUBLE, MPI_SUM,
+//                 MPI_COMM_WORLD);
+//   MPI_Allreduce(MPI_IN_PLACE, particle_mom_2.data(), 3, MPI_DOUBLE, MPI_SUM,
+//                 MPI_COMM_WORLD);
+//   MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
+//                 MPI_COMM_WORLD);
+//   // Check total momentum is conserved
+//   auto const measured_mom = particle_mom_1 + particle_mom_2 + fluid_mom;
+//   BOOST_CHECK_SMALL((initial_momentum - measured_mom).norm(), 1e-5);
+// }
 
 int main(int argc, char **argv) {
   MPI_Init(&argc, &argv);

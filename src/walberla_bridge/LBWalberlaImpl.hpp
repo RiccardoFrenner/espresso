@@ -73,6 +73,7 @@
 #include "lbm/field/PdfField.h"
 #include "lbm/lattice_model/D3Q19.h"
 #include "lbm/sweeps/CellwiseSweep.h"
+#include "lbm/sweeps/SweepWrappers.h"
 
 #include "stencil/D3Q27.h"
 
@@ -309,9 +310,8 @@ private:
 
   void init_pe_fields() {
     // add body field
-    // TODO: use field::fzyx ???
     m_body_field_id = field::addToStorage<BodyField>(m_blocks, "body field",
-                                                     nullptr, field::zyxf);
+                                                     nullptr, field::fzyx);
   }
 
   void init_body_synchronization() {
@@ -346,21 +346,6 @@ private:
   }
 
   void init_time_loop(uint_t const timesteps) {
-    // The following briefly describes the steps of the timeloop.
-    // Expressions in brackets only appear when using moving obstacles.
-    // - sweep: Reset force fields
-    // - sweep: Boundary Handling
-    // - sweep: LB stream & collide
-    // - (sweep: Body Mapping)
-    // - (sweep: PDF Restore)
-    // - (afterFunc: Force storing)
-    // - (afterFunc: Force setting)
-    // - (afterFunc: Force averaging)
-    // - (afterFunc: Force scaling adjustment)
-    // - (afterFunc: Swap FT container)
-    // - (afterFunc: Constant global forces)
-    // - (afterFunc: pe Time Step)
-    // - afterFunc: communication
     // Communication needs to happen at the end, because espresso relies on the
     // values beeing up to date also on the ghost layers.
 
@@ -368,16 +353,58 @@ private:
     m_time_loop =
         make_shared<SweepTimeloop>(m_blocks->getBlockStorage(), timesteps);
 
-    m_time_loop->add() << timeloop::Sweep(makeSharedSweep(m_reset_force),
-                                          "Reset force fields");
+    if (using_moving_obstacles()) {
+      // sweep for updating the pe body mapping into the LBM simulation
+      m_time_loop->add() << timeloop::Sweep(
+          pe_coupling::BodyMapping<LatticeModel, Boundaries,
+                                   pe_coupling::NaNDestroyer<LatticeModel>,
+                                   true>(
+              m_blocks, m_pdf_field_id, m_boundary_handling_id,
+              m_body_storage_id, m_global_body_storage, m_body_field_id,
+              MO_BB_Flag, FormerMO_Flag, pe_coupling::selectRegularBodies),
+          "Body Mapping");
 
-    // add boundary handling sweep
-    m_time_loop->add() << timeloop::Sweep(
-        Boundaries::getBlockSweep(m_boundary_handling_id),
-        "MO Boundary Handling");
+      // sweep for restoring PDFs in cells previously occupied by pe bodies
+      m_time_loop->add() << timeloop::Sweep(
+          pe_coupling::PDFReconstruction<LatticeModel, Boundaries,
+                                         Reconstructor, true, true>(
+              m_blocks, m_pdf_field_id, m_boundary_handling_id,
+              m_body_storage_id, m_global_body_storage, m_body_field_id,
+              *m_reconstructor, FormerMO_Flag, Fluid_flag),
+          "PDF Restore");
+    }
 
-    m_time_loop->add() << timeloop::Sweep(
-        typename LatticeModel::Sweep(m_pdf_field_id), "LB stream & collide");
+    // m_time_loop->add() << timeloop::Sweep(makeSharedSweep(m_reset_force),
+    //                                       "Reset force fields");
+
+    auto combined_sweep_stream =
+        std::make_shared<typename LatticeModel::Sweep>(m_pdf_field_id);
+    auto stream = [combined_sweep_stream](
+                      IBlock *const block,
+                      const uint_t numberOfGhostLayersToInclude = uint_t(0)) {
+      combined_sweep_stream->stream(block, numberOfGhostLayersToInclude);
+    };
+    auto combined_sweep_collide =
+        std::make_shared<typename LatticeModel::Sweep>(m_pdf_field_id);
+    auto collide = [combined_sweep_collide](
+                       IBlock *const block,
+                       const uint_t numberOfGhostLayersToInclude = uint_t(0)) {
+      combined_sweep_collide->collide(block, numberOfGhostLayersToInclude);
+    };
+
+    // collision sweep
+    m_time_loop->add() << Sweep(collide, "cell-wise LB sweep (collide)");
+
+    // add LBM communication function and boundary handling sweep (does the
+    // hydro force calculations and the no-slip treatment)
+    m_time_loop->add() << BeforeFunction(*m_communication, "LBM Communication")
+                       << Sweep(
+                              Boundaries::getBlockSweep(m_boundary_handling_id),
+                              "Boundary Handling");
+
+    // streaming
+    m_time_loop->add() << Sweep(stream, "cell-wise LB sweep (stream)")
+                       << AfterFunction(*m_communication, "communicate 2");
 
     if (using_moving_obstacles()) {
       // todo: remove
@@ -436,34 +463,17 @@ private:
                                 m_pe_parameters.get_num_pe_sub_cycles()),
           "pe Time Step");
 
-      // sweep for updating the pe body mapping into the LBM simulation
-      m_time_loop->add() << timeloop::Sweep(
-          pe_coupling::BodyMapping<LatticeModel, Boundaries>(
-              m_blocks, m_pdf_field_id, m_boundary_handling_id,
-              m_body_storage_id, m_global_body_storage, m_body_field_id,
-              MO_BB_Flag, FormerMO_Flag, pe_coupling::selectRegularBodies),
-          "Body Mapping");
-
-      // sweep for restoring PDFs in cells previously occupied by pe bodies
-      m_time_loop->add() << timeloop::Sweep(
-          pe_coupling::PDFReconstruction<LatticeModel, Boundaries,
-                                         Reconstructor, true>(
-              m_blocks, m_pdf_field_id, m_boundary_handling_id,
-              m_body_storage_id, m_global_body_storage, m_body_field_id,
-              *m_reconstructor, FormerMO_Flag, Fluid_flag),
-          "PDF Restore");
+      m_time_loop->addFuncAfterTimeStep(*m_communication, "communication");
     }
-
-    m_time_loop->addFuncAfterTimeStep(*m_communication, "communication");
   }
 
   void init_pe() {
+    // Init pe body type ids
+    pe::SetBodyTypeIDs<BodyTypeTuple>::execute();
+
     init_pe_fields();
 
     m_global_body_storage = make_shared<pe::BodyStorage>();
-
-    // Init pe body type ids
-    pe::SetBodyTypeIDs<BodyTypeTuple>::execute();
 
     m_body_storage_id = m_blocks->addBlockData(
         pe::createStorageDataHandling<BodyTypeTuple>(), "pe Body Storage");
@@ -639,7 +649,7 @@ private:
         true, true, true);            // periodicity
 
     // todo: remove
-    debug_print_block_setup();
+    // debug_print_block_setup();
   }
 
 public:
@@ -1406,6 +1416,15 @@ public:
       return {to_quaternion<real_t>(p->getQuaternion())};
     }
     return {};
+  }
+  bool set_particle_position(std::uint64_t uid,
+                             Utils::Vector3d const &pos) override {
+    pe::BodyID p = get_particle(uid);
+    if (p == nullptr)
+      return false;
+
+    p->setPosition(to_vector3(pos));
+    return true;
   }
   boost::optional<Utils::Vector3d>
   get_particle_position(std::uint64_t uid) const override {
