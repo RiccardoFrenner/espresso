@@ -113,9 +113,6 @@ public:
   /** @brief Calculate momentum summed over all nodes on the MPI rank */
   virtual Utils::Vector3d get_momentum() const = 0;
 
-  /** @brief Calculate energy summed over all nodes on the MPI rank */
-  virtual double get_energy() const = 0;
-
   virtual void set_external_force(const Utils::Vector3d &ext_force) = 0;
   virtual Utils::Vector3d get_external_force() const = 0;
 
