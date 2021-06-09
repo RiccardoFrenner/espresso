@@ -1312,7 +1312,8 @@ public:
                     double radius,
                     Utils::Vector3d const &linVel = Utils::Vector3d{0, 0, 0},
                     std::string const &material_name = "iron") override {
-    if (m_pe_particles.find(uid) != m_pe_particles.end()) {
+    // Particle with same uid should not already exist
+    if (get_particle(uid) != nullptr) {
       return false;
     }
     auto material = pe::Material::find(material_name);
