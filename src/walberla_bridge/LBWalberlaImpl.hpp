@@ -48,7 +48,6 @@
 #include "pe/statistics/BodyStatistics.h"
 #include "pe/utility/DestroyBody.h"
 
-// TODO: Remove unused headers
 #include "pe/vtk/SphereVtkOutput.h"
 #include "pe_coupling/mapping/all.h"
 #include "pe_coupling/momentum_exchange_method/all.h"
@@ -221,12 +220,6 @@ protected:
   std::function<void(void)> m_set_force_torque_on_bodies_from_cont_2;
   std::function<void(void)> m_set_force_scaling_factor_to_half;
 
-  // calculates particle information on call
-  // std::shared_ptr<pe::BodyStatistics> m_bodyStats;
-
-  // view on particles to access them via their uid
-  std::map<std::uint64_t, pe::BodyID> m_pe_particles;
-
   // force/torque is reset after each time step, so we need to store them here
   std::map<std::uint64_t, Vector3<real_t>> m_particle_forces;
   std::map<std::uint64_t, Vector3<real_t>> m_particle_torques;
@@ -374,8 +367,8 @@ private:
           "PDF Restore");
     }
 
-    // m_time_loop->add() << timeloop::Sweep(makeSharedSweep(m_reset_force),
-    //                                       "Reset force fields");
+    m_time_loop->add() << timeloop::Sweep(makeSharedSweep(m_reset_force),
+                                          "Reset force fields");
 
     auto combined_sweep_stream =
         std::make_shared<typename LatticeModel::Sweep>(m_pdf_field_id);
@@ -407,10 +400,6 @@ private:
                        << AfterFunction(*m_communication, "communicate 2");
 
     if (using_moving_obstacles()) {
-      // todo: remove
-      // m_time_loop->addFuncAfterTimeStep(m_debug_timeloop_helper,
-      //                                   "Debug helper");
-
       // Averaging the force/torque over two time steps is said to damp
       // oscillations of the interaction force/torque. See Ladd - " Numerical
       // simulations of particulate suspensions via a discretized Boltzmann
@@ -439,15 +428,11 @@ private:
                 m_bodies_force_torque_container_1,
                 m_bodies_force_torque_container_2),
             "Swap FT container");
-
-        // todo: remove
-        // m_time_loop->addFuncAfterTimeStep(m_debug_timeloop_helper,
-        //                                   "Debug helper");
       }
 
       // save force/torque before overriden by global force or reset by pe step
-      // m_time_loop->addFuncAfterTimeStep(m_save_force_torque,
-      //                                   "Save force/torque");
+      m_time_loop->addFuncAfterTimeStep(m_save_force_torque,
+                                        "Save force/torque");
 
       // add constant global forces
       for (auto &&t : m_pe_parameters.get_constant_global_forces()) {
@@ -565,27 +550,6 @@ private:
         }
       }
     };
-
-    // todo: remove
-    m_debug_timeloop_helper = [this]() {
-      for (auto blockIt = m_blocks->begin(); blockIt != m_blocks->end();
-           ++blockIt) {
-
-        for (auto bodyIt = pe::BodyIterator::begin(*blockIt, m_body_storage_id);
-             bodyIt != pe::BodyIterator::end(); ++bodyIt) {
-
-          auto a1 = bodyIt->getForce();
-          auto a2 = bodyIt->getTorque();
-          auto a3 = bodyIt->getID();
-          auto a4 = bodyIt->getAngularVel();
-          auto a5 = bodyIt->getLinearVel();
-          auto a6 = bodyIt->hasManager();
-          auto a7 = bodyIt->getManager();
-          auto a8 = bodyIt->checkInvariants();
-        }
-      }
-    };
-
     m_is_pe_initialized = true;
   }
 
@@ -647,9 +611,6 @@ private:
         uint_c(n_processes[1]),       // cpus in y direction
         uint_c(n_processes[2]),       // cpus in z direction
         true, true, true);            // periodicity
-
-    // todo: remove
-    // debug_print_block_setup();
   }
 
 public:
@@ -1090,10 +1051,10 @@ public:
       auto pdf_field = block_it->template getData<PdfField>(m_pdf_field_id);
       Vector3<real_t> local_v;
 
-      // todo: we need to check if cell is domain in other functions too
       auto *bh = block_it->getData<Boundaries>(m_boundary_handling_id);
       WALBERLA_FOR_ALL_CELLS_XYZ(pdf_field, {
-        if (bh->isDomain(Cell(x, y, z))) {
+        if (bh->isDomain(Cell(x, y, z))) { /* todo: we need to check if cell is
+                                              domain in other functions too */
           real_t local_dens =
               pdf_field->getDensityAndVelocity(local_v, x, y, z);
           mom += local_dens * local_v;
@@ -1101,27 +1062,6 @@ public:
       });
     }
     return to_vector3d(mom);
-  };
-
-  // Global energy
-  double get_energy() const override {
-    real_t energy{0};
-    for (auto block_it = m_blocks->begin(); block_it != m_blocks->end();
-         ++block_it) {
-      auto pdf_field = block_it->template getData<PdfField>(m_pdf_field_id);
-      Vector3<real_t> local_v;
-
-      // todo: we need to check if cell is domain in other functions too
-      auto *bh = block_it->getData<Boundaries>(m_boundary_handling_id);
-      WALBERLA_FOR_ALL_CELLS_XYZ(pdf_field, {
-        if (bh->isDomain(Cell(x, y, z))) {
-          real_t local_dens =
-              pdf_field->getDensityAndVelocity(local_v, x, y, z);
-          energy += .5 * local_dens * math::dot(local_v, local_v);
-        }
-      });
-    }
-    return energy;
   };
 
   // Global external force
@@ -1297,9 +1237,17 @@ public:
 
   // pe utility functions
   pe::BodyID get_particle(std::uint64_t uid) const {
-    auto it = m_pe_particles.find(uid);
-    if (it != m_pe_particles.end()) {
-      return it->second;
+    // todo: Has linear time complexity since all particles on this block are
+    // gone through to find the one with the right uid. This is very bad since
+    // the new virtual sites use this method every timestep, but a simple
+    // solution to the insufficient walberla::pe interface for this task.
+    assert(++(m_blocks->begin()) == m_blocks->end());
+    pe::BodyStorage &localStorage = (*m_blocks->begin()->getData<pe::Storage>(
+        m_body_storage_id))[pe::StorageType::LOCAL];
+    for (auto bodyIt = localStorage.begin(); bodyIt != localStorage.end();) {
+      if (static_cast<id_t>(uid) == bodyIt->getID()) {
+        return bodyIt.getBodyID();
+      }
     }
     return nullptr;
   }
@@ -1324,7 +1272,6 @@ public:
         uid, to_vector3(gpos), real_c(radius), material);
     if (sp != nullptr) {
       sp->setLinearVel(to_vector3(linVel));
-      m_pe_particles[uid] = sp;
       m_particle_forces[uid] = sp->getForce();
       m_particle_torques[uid] = sp->getTorque();
       return true;
@@ -1333,12 +1280,6 @@ public:
   }
   /** @brief removes all rigid bodies matching the given uid */
   void remove_particle(std::uint64_t uid) override {
-    auto it = m_pe_particles.find(uid);
-    if (it != m_pe_particles.end()) {
-      m_pe_particles.erase(it);
-    }
-    // Has to be called the same way on all processes to work correctly!
-    // That's why it is not inside the if statement above.
     pe::destroyBodyByUID(*m_global_body_storage, m_blocks->getBlockStorage(),
                          m_body_storage_id, uid);
   }
@@ -1497,8 +1438,9 @@ public:
                                 double cor, double csf, double cdf,
                                 double poisson, double young, double stiffness,
                                 double dampingN, double dampingT) override {
-    // todo: remove if and remove completely from interface. Materials are not
-    // instance-based.
+    // todo: Walberla materials are not instance-based, so this method should
+    // be neither.
+    // This can cause problems when the lb_walberla instance is reset.
     if (pe::Material::find(name) == pe::invalid_material) {
       pe::createMaterial(name, real_c(density), real_c(cor), real_c(csf),
                          real_c(cdf), real_c(poisson), real_c(young),
