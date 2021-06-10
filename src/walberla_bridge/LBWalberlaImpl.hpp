@@ -1235,13 +1235,23 @@ public:
     }
   }
 
-  // pe utility functions
-  pe::BodyID get_particle(std::uint64_t uid) const {
-    // todo: Has linear time complexity since all particles on this block are
-    // gone through to find the one with the right uid. This is very bad since
-    // the new virtual sites use this method every timestep, but a simple
-    // solution to the insufficient walberla::pe interface for this task.
+  /** @brief Gets a pointer to the pe particle with the specified uid if it is
+   * either locally on this rank or remotely (as a shadow/ghost) otherwise
+   * returns nullptr.  */
+  pe::BodyID get_particle(std::uint64_t uid, bool consider_ghosts = false,
+                          bool *is_ghost = nullptr) const {
+    std::cout << "get_particle()" << std::endl;
+    // todo: Has linear time complexity since all particles and ghosts on this
+    // block are gone through to find the one with the right uid. This is very
+    // bad since the new virtual sites (VS) use this method every timestep. For
+    // now this is a simple solution to the insufficient walberla::pe interface
+    // for this task and could be improved by custom datastructures which keeps
+    // track of the particles and ghosts on this rank.
+    if (is_ghost != nullptr)
+      *is_ghost = false;
+
     assert(++(m_blocks->begin()) == m_blocks->end());
+
     pe::BodyStorage &localStorage = (*m_blocks->begin()->getData<pe::Storage>(
         m_body_storage_id))[pe::StorageType::LOCAL];
     for (auto bodyIt = localStorage.begin(); bodyIt != localStorage.end();) {
@@ -1249,19 +1259,44 @@ public:
         return bodyIt.getBodyID();
       }
     }
+
+    // Ghosts must also be able to be considered since the new VS are always
+    // lacking behind one timestep and therefore could be on a different rank at
+    // a block boundary crossing. But since a VS only calls this method from its
+    // own rank, it needs at least the ghost to be still there for it to copy
+    // its position.
+    if (consider_ghosts) {
+      pe::BodyStorage &shadowStorage =
+          (*m_blocks->begin()->getData<pe::Storage>(
+              m_body_storage_id))[pe::StorageType::SHADOW];
+      for (auto bodyIt = shadowStorage.begin();
+           bodyIt != shadowStorage.end();) {
+        if (static_cast<id_t>(uid) == bodyIt->getID()) {
+          if (is_ghost != nullptr)
+            *is_ghost = true;
+          return bodyIt.getBodyID();
+        }
+      }
+    }
     return nullptr;
   }
   // pe interface functions
-  bool is_particle_on_this_process(std::uint64_t uid) const override {
-    pe::BodyID p = get_particle(uid);
-    return p != nullptr;
+  bool
+  is_particle_on_this_process(std::uint64_t uid,
+                              bool consider_ghosts = false) const override {
+    bool is_ghost;
+    pe::BodyID p = get_particle(uid, consider_ghosts, &is_ghost);
+    if (consider_ghosts) {
+      return p != nullptr;
+    }
+    return p != nullptr && !is_ghost;
   }
   bool add_particle(std::uint64_t uid, Utils::Vector3d const &gpos,
                     double radius,
                     Utils::Vector3d const &linVel = Utils::Vector3d{0, 0, 0},
                     std::string const &material_name = "iron") override {
     // Particle with same uid should not already exist
-    if (get_particle(uid) != nullptr) {
+    if (get_particle(uid, true) != nullptr) {
       return false;
     }
     auto material = pe::Material::find(material_name);
@@ -1292,8 +1327,10 @@ public:
     m_pe_sync_call();
   }
 
-  boost::optional<double> get_particle_mass(std::uint64_t uid) const override {
-    pe::BodyID p = get_particle(uid);
+  boost::optional<double>
+  get_particle_mass(std::uint64_t uid,
+                    bool consider_ghosts = false) const override {
+    pe::BodyID p = get_particle(uid, consider_ghosts);
     if (p != nullptr) {
       return {p->getMass()};
     }
@@ -1315,8 +1352,9 @@ public:
     }
   }
   boost::optional<Utils::Vector3d>
-  get_particle_velocity(std::uint64_t uid) const override {
-    pe::BodyID p = get_particle(uid);
+  get_particle_velocity(std::uint64_t uid,
+                        bool consider_ghosts = false) const override {
+    pe::BodyID p = get_particle(uid, consider_ghosts);
     if (p != nullptr) {
       return {to_vector3d(p->getLinearVel())};
     }
@@ -1337,8 +1375,9 @@ public:
     }
   }
   boost::optional<Utils::Vector3d>
-  get_particle_angular_velocity(std::uint64_t uid) const override {
-    pe::BodyID p = get_particle(uid);
+  get_particle_angular_velocity(std::uint64_t uid,
+                                bool consider_ghosts = false) const override {
+    pe::BodyID p = get_particle(uid, consider_ghosts);
     if (p != nullptr) {
       return {to_vector3d(p->getAngularVel())};
     }
@@ -1352,8 +1391,9 @@ public:
     }
   }
   boost::optional<Utils::Quaternion<double>>
-  get_particle_orientation(std::uint64_t uid) const override {
-    pe::BodyID p = get_particle(uid);
+  get_particle_orientation(std::uint64_t uid,
+                           bool consider_ghosts = false) const override {
+    pe::BodyID p = get_particle(uid, consider_ghosts);
     if (p != nullptr) {
       return {to_quaternion<real_t>(p->getQuaternion())};
     }
@@ -1369,24 +1409,27 @@ public:
     return true;
   }
   boost::optional<Utils::Vector3d>
-  get_particle_position(std::uint64_t uid) const override {
-    pe::BodyID p = get_particle(uid);
+  get_particle_position(std::uint64_t uid,
+                        bool consider_ghosts = false) const override {
+    pe::BodyID p = get_particle(uid, consider_ghosts);
     if (p != nullptr) {
       return {to_vector3d(p->getPosition())};
     }
     return {};
   }
   boost::optional<Utils::Vector3d>
-  get_particle_force(std::uint64_t uid) const override {
-    pe::BodyID p = get_particle(uid);
+  get_particle_force(std::uint64_t uid,
+                     bool consider_ghosts = false) const override {
+    pe::BodyID p = get_particle(uid, consider_ghosts);
     if (p != nullptr) {
       return {to_vector3d(m_particle_forces.at(uid))};
     }
     return {};
   }
   boost::optional<Utils::Vector3d>
-  get_particle_torque(std::uint64_t uid) const override {
-    pe::BodyID p = get_particle(uid);
+  get_particle_torque(std::uint64_t uid,
+                      bool consider_ghosts = false) const override {
+    pe::BodyID p = get_particle(uid, consider_ghosts);
     if (p != nullptr) {
       return {to_vector3d(m_particle_torques.at(uid))};
     }

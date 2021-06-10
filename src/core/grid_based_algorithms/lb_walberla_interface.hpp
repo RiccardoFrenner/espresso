@@ -66,14 +66,18 @@ namespace PE_Coupling {
 bool add_particle(std::uint64_t uid, Utils::Vector3d gpos, double radius,
                   Utils::Vector3d linVel, std::string material_name = "iron");
 void remove_particle(std::uint64_t uid);
-boost::optional<Utils::Vector3d> get_particle_velocity(std::uint64_t uid);
 boost::optional<Utils::Vector3d>
-get_particle_angular_velocity(std::uint64_t uid);
+get_particle_velocity(std::uint64_t uid, bool consider_ghosts = false);
+boost::optional<Utils::Vector3d>
+get_particle_angular_velocity(std::uint64_t uid, bool consider_ghosts = false);
 boost::optional<Utils::Quaternion<double>>
-get_particle_orientation(std::uint64_t uid);
-boost::optional<Utils::Vector3d> get_particle_position(std::uint64_t uid);
-boost::optional<Utils::Vector3d> get_particle_force(std::uint64_t uid);
-boost::optional<Utils::Vector3d> get_particle_torque(std::uint64_t uid);
+get_particle_orientation(std::uint64_t uid, bool consider_ghosts = false);
+boost::optional<Utils::Vector3d>
+get_particle_position(std::uint64_t uid, bool consider_ghosts = false);
+boost::optional<Utils::Vector3d>
+get_particle_force(std::uint64_t uid, bool consider_ghosts = false);
+boost::optional<Utils::Vector3d>
+get_particle_torque(std::uint64_t uid, bool consider_ghosts = false);
 bool set_particle_force(std::uint64_t uid, Utils::Vector3d const &f);
 bool add_particle_force(std::uint64_t uid, Utils::Vector3d const &f);
 bool set_particle_torque(std::uint64_t uid, Utils::Vector3d const &tau);

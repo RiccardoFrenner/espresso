@@ -169,41 +169,48 @@ public:
                             double radius, Utils::Vector3d const &linVel,
                             std::string const &material_name = "iron") = 0;
   virtual void remove_particle(std::uint64_t uid) = 0;
-  virtual bool is_particle_on_this_process(std::uint64_t uid) const = 0;
+  virtual bool
+  is_particle_on_this_process(std::uint64_t uid,
+                              bool consider_ghosts = false) const = 0;
   virtual boost::optional<double>
-  get_particle_mass(std::uint64_t uid) const = 0;
+  get_particle_mass(std::uint64_t uid, bool consider_ghosts = false) const = 0;
   virtual void set_particle_velocity(std::uint64_t uid,
                                      Utils::Vector3d const &v) = 0;
   virtual void add_particle_velocity(std::uint64_t uid,
                                      Utils::Vector3d const &v) = 0;
   virtual boost::optional<Utils::Vector3d>
-  get_particle_velocity(std::uint64_t uid) const = 0;
+  get_particle_velocity(std::uint64_t uid,
+                        bool consider_ghosts = false) const = 0;
   virtual void set_particle_angular_velocity(std::uint64_t uid,
                                              Utils::Vector3d const &w) = 0;
   virtual void add_particle_angular_velocity(std::uint64_t uid,
                                              Utils::Vector3d const &w) = 0;
   virtual boost::optional<Utils::Vector3d>
-  get_particle_angular_velocity(std::uint64_t uid) const = 0;
+  get_particle_angular_velocity(std::uint64_t uid,
+                                bool consider_ghosts = false) const = 0;
   virtual void set_particle_orientation(std::uint64_t uid,
                                         Utils::Quaternion<double> const &q) = 0;
   virtual boost::optional<Utils::Quaternion<double>>
-  get_particle_orientation(std::uint64_t uid) const = 0;
+  get_particle_orientation(std::uint64_t uid,
+                           bool consider_ghosts = false) const = 0;
   virtual bool set_particle_position(std::uint64_t uid,
                                      Utils::Vector3d const &pos) = 0;
   virtual boost::optional<Utils::Vector3d>
-  get_particle_position(std::uint64_t uid) const = 0;
+  get_particle_position(std::uint64_t uid,
+                        bool consider_ghosts = false) const = 0;
   virtual bool set_particle_force(std::uint64_t uid,
                                   Utils::Vector3d const &f) = 0;
   virtual bool add_particle_force(std::uint64_t uid,
                                   Utils::Vector3d const &f) = 0;
   virtual boost::optional<Utils::Vector3d>
-  get_particle_force(std::uint64_t uid) const = 0;
+  get_particle_force(std::uint64_t uid, bool consider_ghosts = false) const = 0;
   virtual bool set_particle_torque(std::uint64_t uid,
                                    Utils::Vector3d const &tau) = 0;
   virtual bool add_particle_torque(std::uint64_t uid,
                                    Utils::Vector3d const &tau) = 0;
   virtual boost::optional<Utils::Vector3d>
-  get_particle_torque(std::uint64_t uid) const = 0;
+  get_particle_torque(std::uint64_t uid,
+                      bool consider_ghosts = false) const = 0;
   virtual void sync_particles() = 0;
   virtual void map_particles_to_lb_grid() = 0;
   virtual void finish_particle_adding() = 0;

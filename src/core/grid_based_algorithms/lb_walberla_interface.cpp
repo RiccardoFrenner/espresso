@@ -181,45 +181,49 @@ void remove_particle(std::uint64_t uid) { lb_walberla()->remove_particle(uid); }
 
 REGISTER_CALLBACK(remove_particle)
 
-boost::optional<Utils::Vector3d> get_particle_velocity(std::uint64_t uid) {
-  auto res = lb_walberla()->get_particle_velocity(uid);
+boost::optional<Utils::Vector3d> get_particle_velocity(std::uint64_t uid,
+                                                       bool consider_ghosts) {
+  auto res = lb_walberla()->get_particle_velocity(uid, consider_ghosts);
   return res;
 }
 
 REGISTER_CALLBACK_ONE_RANK(get_particle_velocity)
 
 boost::optional<Utils::Vector3d>
-get_particle_angular_velocity(std::uint64_t uid) {
-  auto res = lb_walberla()->get_particle_angular_velocity(uid);
+get_particle_angular_velocity(std::uint64_t uid, bool consider_ghosts) {
+  auto res = lb_walberla()->get_particle_angular_velocity(uid, consider_ghosts);
   return res;
 }
 
 REGISTER_CALLBACK_ONE_RANK(get_particle_angular_velocity)
 
 boost::optional<Utils::Quaternion<double>>
-get_particle_orientation(std::uint64_t uid) {
-  auto res = lb_walberla()->get_particle_orientation(uid);
+get_particle_orientation(std::uint64_t uid, bool consider_ghosts) {
+  auto res = lb_walberla()->get_particle_orientation(uid, consider_ghosts);
   return res;
 }
 
 REGISTER_CALLBACK_ONE_RANK(get_particle_orientation)
 
-boost::optional<Utils::Vector3d> get_particle_position(std::uint64_t uid) {
-  auto res = lb_walberla()->get_particle_position(uid);
+boost::optional<Utils::Vector3d> get_particle_position(std::uint64_t uid,
+                                                       bool consider_ghosts) {
+  auto res = lb_walberla()->get_particle_position(uid, consider_ghosts);
   return res;
 }
 
 REGISTER_CALLBACK_ONE_RANK(get_particle_position)
 
-boost::optional<Utils::Vector3d> get_particle_force(std::uint64_t uid) {
-  auto res = lb_walberla()->get_particle_force(uid);
+boost::optional<Utils::Vector3d> get_particle_force(std::uint64_t uid,
+                                                    bool consider_ghosts) {
+  auto res = lb_walberla()->get_particle_force(uid, consider_ghosts);
   return res;
 }
 
 REGISTER_CALLBACK_ONE_RANK(get_particle_force)
 
-boost::optional<Utils::Vector3d> get_particle_torque(std::uint64_t uid) {
-  auto res = lb_walberla()->get_particle_torque(uid);
+boost::optional<Utils::Vector3d> get_particle_torque(std::uint64_t uid,
+                                                     bool consider_ghosts) {
+  auto res = lb_walberla()->get_particle_torque(uid, consider_ghosts);
   return res;
 }
 

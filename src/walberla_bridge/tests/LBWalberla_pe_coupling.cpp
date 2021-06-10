@@ -119,7 +119,7 @@ BOOST_AUTO_TEST_CASE(remove_particle) {
   lb->remove_particle(uid);
 
   // Check that particle doesn't exist on any rank
-  BOOST_CHECK(lb->is_particle_on_this_process(uid) == false);
+  BOOST_CHECK(lb->is_particle_on_this_process(uid, true) == false);
 }
 
 // int count_boundary_cells(Vector3d my_left, Vector3d my_right,
