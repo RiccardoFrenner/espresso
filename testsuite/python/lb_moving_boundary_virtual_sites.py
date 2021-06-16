@@ -37,6 +37,14 @@ P_RADIUS = 7.5 * AGRID
 
 GAMMA = 1
 
+PARTICLE_FORCE = np.array([2, -3, 5])*5e-2
+LB_PARAMS = {
+    'agrid': AGRID,
+        'dens': DENS,
+        'visc': KVISC,
+        'tau': TIME_STEP,
+        "pe_params": ([(PARTICLE_FORCE, "p_force")], )
+}
 
 @utx.skipIfMissingFeatures(['LB_WALBERLA'])
 class MBVirtualSites(ut.TestCase):
@@ -48,34 +56,28 @@ class MBVirtualSites(ut.TestCase):
     system.time_step = TIME_STEP
     system.cell_system.skin = 0.01
 
-    def setUp(self):
-        self.system.actors.clear()
+    def tearDown(self):
         self.system.part.clear()
+        self.system.actors.clear()
+        self.system.thermostat.turn_off()
+
+    def setUp(self):
+        self.system.part.clear()
+        self.system.actors.clear()
         self.system.virtual_sites = VirtualSitesWalberlaMovingBoundary()
 
-        print("node_grid: ", self.system.cell_system.node_grid)
-        print("cell_system.get_state(): ", self.system.cell_system.get_state())
-
-    def test_follow_pe_particle(self):
-        """
-        Tests if the VS follows the pe particle.
-        """
-        LB_PARAMS = {
-            'agrid': AGRID,
-             'dens': DENS,
-             'visc': KVISC,
-             'tau': TIME_STEP,
-             "pe_params": ([([0,0,5e-1], "p_force")], )
-        }
         self.lbf = espressomd.lb.LBFluidWalberla(**LB_PARAMS)
         self.system.actors.add(self.lbf)
-        self.system.thermostat.set_lb(LB_fluid=self.lbf, gamma=GAMMA, seed=1)
+        self.system.thermostat.set_lb(
+            LB_fluid=self.lbf,
+            act_on_virtual=False,
+            gamma=GAMMA, seed=1)
 
         self.assertIsInstance(self.system.virtual_sites, VirtualSitesWalberlaMovingBoundary)
 
         # Add pe particle
-        p_init_pos = self.system.box_l/2 #+ np.array([0,0, 0.5*self.system.box_l[2] - 1.2*P_RADIUS])
-        p_initial_v = np.array([0 ,0, 1e-3*AGRID])
+        p_init_pos = self.system.box_l/2 + np.array([0,0, 0.5*self.system.box_l[2] - 1.2*P_RADIUS])
+        p_initial_v = 0.1*np.copy(PARTICLE_FORCE)*AGRID
         self.lbf.create_particle_material("myMat", P_DENSITY)
         self.lbf.add_particle(P_UID, p_init_pos, P_RADIUS, p_initial_v, "myMat")
         self.lbf.finish_particle_adding()
@@ -83,24 +85,42 @@ class MBVirtualSites(ut.TestCase):
         p_pos = self.lbf.get_particle_position(P_UID)
 
         # Add VS
-        p = self.system.part.add(pos=p_pos, virtual=True, id=P_UID)
+        self.system.part.add(pos=p_pos, virtual=True, id=P_UID)
 
-        # part_dist = self.system.cell_system.resort()
+    def test_follow_pe_particle(self):
+        """
+        Tests whether the VS follows the pe particle in particular over the box
+        and domain boundaries.
+        Since periodic boundaries are enabled by default, passing the domain
+        boundary should also not be a problem.
+        """
 
-        steps_per_it = 10
-        print(self.system.box_l)
-        print("Starting integration...")
-        while(True):
+        p = self.system.part[P_UID]
+
+        p_pos = self.lbf.get_particle_position(P_UID)
+        p_v = self.lbf.get_particle_velocity(P_UID)
+
+        dist_travelled = 0
+        steps_per_it = 20
+        print("timestep\tpx\tpy\tpz\t|pv|")
+        for i in count(0,1):
+            print(i*steps_per_it, p_pos[0], p_pos[1], p_pos[2], np.linalg.norm(np.copy(p_v)), sep="\t")
             self.system.integrator.run(steps_per_it)
 
             p_pos = self.lbf.get_particle_position(P_UID)
             p_v = self.lbf.get_particle_velocity(P_UID)
 
-            # np.testing.assert_equal(np.copy(p_pos), np.copy(p.pos))
+            dist_travelled += np.linalg.norm(p_v)*TIME_STEP*steps_per_it
 
-            # Make sure the particle crossed the domain boundary
-            print(p_pos[2], p.pos[2], p_v[2], sep="|")
-            if (p_pos[2] > 2*P_RADIUS and p_pos[2] < p_init_pos[2]): break
+            # Position and velocity of VS and pe particle should be equal
+            np.testing.assert_equal(np.copy(p_v), np.copy(p.v))
+            np.testing.assert_equal(np.copy(p_pos), np.copy(p.pos_folded))
+
+
+            # Stop after the particle has crossed the domain boundary
+            if (dist_travelled > np.linalg.norm(self.system.box_l)): break
+            if (i > 3): break
+
 
 if __name__ == "__main__":
     ut.main()

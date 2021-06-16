@@ -25,7 +25,7 @@ from itertools import count
 
 # Define the LB Parameters
 TIME_STEP = 1 #0.008
-AGRID = 1 #.4
+AGRID = 1 # .4
 GRID_SIZE = 54
 KVISC = 0.1 * AGRID**2 / TIME_STEP
 DENS = 1 * AGRID**(-3)
@@ -91,8 +91,11 @@ class Momentum(object):
         measured_momentum = get_fluid_mom() + p_v * P_MASS
         np.testing.assert_allclose(initial_momentum, np.copy(p_v) * P_MASS)
 
-        steps_per_it = 10
-        for _ in range(20):
+        steps_per_it = 1
+        print("timestep\tpx\tpy\tpz\t|pv|")
+        for i in range(20):
+            print(i*steps_per_it, p_pos[0], p_pos[1], p_pos[2], np.linalg.norm(np.copy(p_v)), sep="\t")
+
             self.system.integrator.run(steps_per_it)
 
             p_v = self.lbf.get_particle_velocity(P_UID)
