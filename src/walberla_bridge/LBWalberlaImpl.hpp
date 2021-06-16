@@ -224,7 +224,6 @@ protected:
   std::map<std::uint64_t, Vector3<real_t>> m_particle_forces;
   std::map<std::uint64_t, Vector3<real_t>> m_particle_torques;
   std::function<void(void)> m_save_force_torque;
-  std::function<void(void)> m_debug_timeloop_helper;
 
   bool m_is_pe_initialized;
   std::function<void(void)> m_pe_sync_call;
@@ -430,6 +429,7 @@ private:
             "Swap FT container");
       }
 
+      // todo: remove the force/torque deletion from pe::TImestep instead
       // save force/torque before overriden by global force or reset by pe step
       m_time_loop->addFuncAfterTimeStep(m_save_force_torque,
                                         "Save force/torque");
@@ -1240,13 +1240,13 @@ public:
    * returns nullptr.  */
   pe::BodyID get_particle(std::uint64_t uid, bool consider_ghosts = false,
                           bool *is_ghost = nullptr) const {
-    std::cout << "get_particle()" << std::endl;
-    // todo: Has linear time complexity since all particles and ghosts on this
-    // block are gone through to find the one with the right uid. This is very
-    // bad since the new virtual sites (VS) use this method every timestep. For
-    // now this is a simple solution to the insufficient walberla::pe interface
-    // for this task and could be improved by custom datastructures which keeps
-    // track of the particles and ghosts on this rank.
+    // todo: Has linear time complexity in the numerber of particles since all
+    // particles and ghosts on this block are gone through to find the one with
+    // the right uid. This is very bad since the new virtual sites (VS) use this
+    // method every timestep. For now this is a simple solution to the
+    // insufficient walberla::pe interface for this task and could be improved
+    // by custom datastructures which keep track of the particles and ghosts on
+    // this rank.
     if (is_ghost != nullptr)
       *is_ghost = false;
 
@@ -1254,12 +1254,12 @@ public:
 
     pe::BodyStorage &localStorage = (*m_blocks->begin()->getData<pe::Storage>(
         m_body_storage_id))[pe::StorageType::LOCAL];
-    for (auto bodyIt = localStorage.begin(); bodyIt != localStorage.end();) {
+    for (auto bodyIt = localStorage.begin(); bodyIt != localStorage.end();
+         ++bodyIt) {
       if (static_cast<id_t>(uid) == bodyIt->getID()) {
         return bodyIt.getBodyID();
       }
     }
-
     // Ghosts must also be able to be considered since the new VS are always
     // lacking behind one timestep and therefore could be on a different rank at
     // a block boundary crossing. But since a VS only calls this method from its
@@ -1269,8 +1269,8 @@ public:
       pe::BodyStorage &shadowStorage =
           (*m_blocks->begin()->getData<pe::Storage>(
               m_body_storage_id))[pe::StorageType::SHADOW];
-      for (auto bodyIt = shadowStorage.begin();
-           bodyIt != shadowStorage.end();) {
+      for (auto bodyIt = shadowStorage.begin(); bodyIt != shadowStorage.end();
+           ++bodyIt) {
         if (static_cast<id_t>(uid) == bodyIt->getID()) {
           if (is_ghost != nullptr)
             *is_ghost = true;
