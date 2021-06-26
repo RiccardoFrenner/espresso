@@ -21,11 +21,10 @@ import unittest as ut
 import unittest_decorators as utx
 
 import numpy as np
-from itertools import count
 
 # Define the LB Parameters
-TIME_STEP = 1 #0.008
-AGRID = 1 # .4
+TIME_STEP = 1  # 0.008
+AGRID = 1  # .4
 GRID_SIZE = 54
 KVISC = 0.1 * AGRID**2 / TIME_STEP
 DENS = 1 * AGRID**(-3)
@@ -37,11 +36,12 @@ F = 5.5 / GRID_SIZE**3
 EXTERNAL_FORCE_DENSITY = np.array([-.7 * F, .9 * F, .8 * F])
 GAMMA = 1
 
-P_VOLUME = 4./3. * np.pi * np.power(P_RADIUS,3)
+P_VOLUME = 4./3. * np.pi * np.power(P_RADIUS, 3)
 P_MASS = P_VOLUME * P_DENSITY
 SYSTEM_VOLUME = (AGRID*GRID_SIZE)**3
 EXTERNAL_FLUID_FORCE = EXTERNAL_FORCE_DENSITY * (SYSTEM_VOLUME - P_VOLUME)
 EXT_PARTICLE_FORCE = - EXTERNAL_FLUID_FORCE
+
 
 class Momentum(object):
     """
@@ -58,10 +58,10 @@ class Momentum(object):
         """
         LB_PARAMS = {
             'agrid': AGRID,
-             'dens': DENS,
-             'visc': KVISC,
-             'tau': TIME_STEP,
-             "pe_params": ([],)
+            'dens': DENS,
+            'visc': KVISC,
+            'tau': TIME_STEP,
+            "pe_params": ([],)
         }
         self.lbf = espressomd.lb.LBFluidWalberla(**LB_PARAMS)
         self.system.actors.add(self.lbf)
@@ -72,19 +72,21 @@ class Momentum(object):
             self.system.analysis.linear_momentum(), [0., 0., 0.], atol=1E-12)
 
         # Add walberla particle
-        p_initial_v = np.array([0 ,0, 1e-3*AGRID])
+        p_initial_v = np.array([0, 0, 1e-3*AGRID])
         self.lbf.create_particle_material("myMat", P_DENSITY)
-        self.lbf.add_particle(P_UID, self.system.box_l/2, P_RADIUS, p_initial_v, "myMat")
+        self.lbf.add_particle(P_UID, self.system.box_l/2,
+                              P_RADIUS, p_initial_v, "myMat")
         self.lbf.finish_particle_adding()
 
         p_pos = self.lbf.get_particle_position(P_UID)
         p_v = self.lbf.get_particle_velocity(P_UID)
 
         # Check particle attributes
-        np.testing.assert_allclose(np.copy(p_pos), np.copy(self.system.box_l/2))
+        np.testing.assert_allclose(
+            np.copy(p_pos), np.copy(self.system.box_l/2))
         np.testing.assert_allclose(np.copy(p_v), p_initial_v)
 
-        get_fluid_mom = lambda : np.array(
+        def get_fluid_mom(): return np.array(
             self.system.analysis.linear_momentum(include_particles=False))
 
         initial_momentum = get_fluid_mom() + p_v * P_MASS
@@ -94,7 +96,8 @@ class Momentum(object):
         steps_per_it = 1
         print("timestep\tpx\tpy\tpz\t|pv|")
         for i in range(20):
-            print(i*steps_per_it, p_pos[0], p_pos[1], p_pos[2], np.linalg.norm(np.copy(p_v)), sep="\t")
+            print(i*steps_per_it, p_pos[0], p_pos[1],
+                  p_pos[2], np.linalg.norm(np.copy(p_v)), sep="\t")
 
             self.system.integrator.run(steps_per_it)
 
@@ -106,7 +109,7 @@ class Momentum(object):
             measured_momentum = fluid_mom + particle_mom
 
             np.testing.assert_allclose(measured_momentum,
-                                        initial_momentum, atol=1E-5)
+                                       initial_momentum, atol=1E-5)
 
 
 @utx.skipIfMissingFeatures(['LB_WALBERLA'])

@@ -474,7 +474,7 @@ if(WITH_WALBERLA)
       walberla::field walberla::lbm walberla::timeloop walberla::vtk walberla::pe walberla::pe_coupling)
   # TODO WALBERLA: remove -lmpi_cxx -lmpi (required to find symbol MPI::Datatype::Free() in VTK code) and -lstdc++fs
   if(NOT CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
-    set(WALBERLA_LIBS ${WALBERLA_LIBS} stdc++fs -lmpi_cxx -lmpi)
+    set(WALBERLA_LIBS ${WALBERLA_LIBS} stdc++fs -Wl,-L,$ENV{LD_LIBRARY_PATH} -lmpi_cxx -lmpi)
   endif()
 endif(WITH_WALBERLA)
 

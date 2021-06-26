@@ -1,4 +1,4 @@
-# Copyright (C) 2010-2019 The ESPResSo project
+# Copyright (C) 2010-2021 The ESPResSo project
 #
 # This file is part of ESPResSo.
 #
@@ -26,8 +26,8 @@ import numpy as np
 from itertools import count
 
 # Define the LB Parameters
-TIME_STEP = 1 #0.008
-AGRID = 1 #.4
+TIME_STEP = 1  # 0.008
+AGRID = 1  # .4
 GRID_SIZE = 54
 KVISC = 0.1 * AGRID**2 / TIME_STEP
 DENS = 1 * AGRID**(-3)
@@ -40,11 +40,12 @@ GAMMA = 1
 PARTICLE_FORCE = np.array([2, -3, 5])*5e-2
 LB_PARAMS = {
     'agrid': AGRID,
-        'dens': DENS,
+    'dens': DENS,
         'visc': KVISC,
         'tau': TIME_STEP,
         "pe_params": ([(PARTICLE_FORCE, "p_force")], )
 }
+
 
 @utx.skipIfMissingFeatures(['LB_WALBERLA'])
 class MBVirtualSites(ut.TestCase):
@@ -56,7 +57,10 @@ class MBVirtualSites(ut.TestCase):
     system.time_step = TIME_STEP
     system.cell_system.skin = 0.01
 
-    def tearDown(self):
+    # Needs to be at least this big to be equal to walberlas ghost particle setup
+    system.min_global_cut = P_RADIUS + system.cell_system.skin
+
+   def tearDown(self):
         self.system.part.clear()
         self.system.actors.clear()
         self.system.thermostat.turn_off()
@@ -73,13 +77,15 @@ class MBVirtualSites(ut.TestCase):
             act_on_virtual=False,
             gamma=GAMMA, seed=1)
 
-        self.assertIsInstance(self.system.virtual_sites, VirtualSitesWalberlaMovingBoundary)
+        self.assertIsInstance(self.system.virtual_sites,
+                              VirtualSitesWalberlaMovingBoundary)
 
         # Add pe particle
-        p_init_pos = self.system.box_l/2 + np.array([0,0, 0.5*self.system.box_l[2] - 1.2*P_RADIUS])
+        p_init_pos = self.system.box_l/2 + np.array([0, 0, 0.5*self.system.box_l[2] - 1.2*P_RADIUS])
         p_initial_v = 0.1*np.copy(PARTICLE_FORCE)*AGRID
         self.lbf.create_particle_material("myMat", P_DENSITY)
-        self.lbf.add_particle(P_UID, p_init_pos, P_RADIUS, p_initial_v, "myMat")
+        self.lbf.add_particle(P_UID, p_init_pos, P_RADIUS,
+                              p_initial_v, "myMat")
         self.lbf.finish_particle_adding()
 
         p_pos = self.lbf.get_particle_position(P_UID)
@@ -103,8 +109,9 @@ class MBVirtualSites(ut.TestCase):
         dist_travelled = 0
         steps_per_it = 20
         print("timestep\tpx\tpy\tpz\t|pv|")
-        for i in count(0,1):
-            print(i*steps_per_it, p_pos[0], p_pos[1], p_pos[2], np.linalg.norm(np.copy(p_v)), sep="\t")
+        for i in count(0, 1):
+            print(i*steps_per_it, p_pos[0], p_pos[1],
+                  p_pos[2], np.linalg.norm(np.copy(p_v)), sep="\t")
             self.system.integrator.run(steps_per_it)
 
             p_pos = self.lbf.get_particle_position(P_UID)
@@ -116,9 +123,9 @@ class MBVirtualSites(ut.TestCase):
             np.testing.assert_equal(np.copy(p_v), np.copy(p.v))
             np.testing.assert_equal(np.copy(p_pos), np.copy(p.pos_folded))
 
-
             # Stop after the particle has crossed the domain boundary
-            if (dist_travelled > np.linalg.norm(self.system.box_l)): break
+            if (dist_travelled > np.linalg.norm(self.system.box_l)):
+                break
             if (i > 3): break
 
 
