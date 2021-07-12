@@ -144,40 +144,10 @@ LbGeneratorVector thermalized_lbs() {
   return lbs;
 }
 
-// Add all LBs with pe enabled here
-LbGeneratorVector pe_enabled_lbs() {
-  LbGeneratorVector lbs;
-
-  lbs.push_back([](const Utils::Vector3i mpi_shape,
-                   const LBTestParameters &params) {
-    auto n_blocks =
-        (mpi_shape[0] == 1 && mpi_shape[1] == 1 && mpi_shape[2] == 1)
-            ? params.n_blocks
-            : mpi_shape;
-    walberla::BlockStructureHelper bs_helper(n_blocks, params.grid_dimensions,
-                                             mpi_shape);
-    auto lb = std::make_shared<walberla::LBWalberlaD3Q19MRT>(
-        params.viscosity, params.density, n_blocks,
-        bs_helper.get_n_cells_per_block(), mpi_shape, 1,
-        PE_Parameters(params.external_particle_forces, 1, true,
-                      params.force_avg));
-    lb->create_particle_material("Test material", params.particle_density, 0.5,
-                                 0.1, 0.1, 0.24, 200, 200, 0, 0);
-    lb->add_particle(0, params.particle_initial_position,
-                     params.particle_radius, params.particle_initial_velocity,
-                     "Test material");
-    lb->finish_particle_adding();
-    return lb;
-  });
-  return lbs;
-}
-
 LbGeneratorVector all_lbs() {
   auto lbs = unthermalized_lbs();
   auto thermalized = thermalized_lbs();
-  auto pe = pe_enabled_lbs();
   lbs.insert(lbs.end(), thermalized.begin(), thermalized.end());
-  lbs.insert(lbs.end(), pe.begin(), pe.end());
   return lbs;
 }
 
