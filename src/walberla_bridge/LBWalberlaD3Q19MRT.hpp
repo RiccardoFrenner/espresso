@@ -51,17 +51,6 @@ public:
                        peParams) {
     construct_lattice_model(viscosity);
     setup_with_valid_lattice_model(density);
-
-    // todo: remove
-    // int rank;
-    // MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    // if (rank == 0) {
-    //   std::cout << "LBWalberlaD3Q19MRT(" << viscosity << ", " << density << ", "
-    //             << "{" << n_blocks << "}, "
-    //             << "{" << n_cells_per_block << "}, "
-    //             << "{" << n_processes << "}, " << n_ghost_layers << ", "
-    //             << peParams << ")" << std::endl;
-    // }
   };
 
   LBWalberlaD3Q19MRT(
@@ -72,16 +61,6 @@ public:
                        peParams) {
     construct_lattice_model(viscosity);
     setup_with_valid_lattice_model(density);
-
-    // todo: remove
-    // int rank;
-    // MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    // if (rank == 0) {
-    //   std::cout << "LBWalberlaD3Q19MRT(" << viscosity << ", " << density << ", "
-    //             << "{" << grid_dimensions << "}, "
-    //             << "{" << node_grid << "}, " << n_ghost_layers << ", "
-    //             << peParams << ")" << std::endl;
-    // }
   };
 };
 

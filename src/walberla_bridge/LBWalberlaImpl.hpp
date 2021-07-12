@@ -565,23 +565,6 @@ private:
         m_blocks, "flag field", m_n_ghost_layers);
   }
 
-  void debug_print_block_setup() {
-    printf("------------------------------------------------------\n");
-    printf("getProcess(): %lu\n", m_blocks->getProcess());
-    printf("get*Size(): %lu %lu %lu\n", m_blocks->getXSize(),
-           m_blocks->getYSize(), m_blocks->getZSize());
-    printf("getNumberOfBlocks(): %lu\n", m_blocks->getNumberOfBlocks());
-    printf("getNumberOf*CellsPerBlock(): %lu %lu %lu\n",
-           m_blocks->getNumberOfXCellsPerBlock(),
-           m_blocks->getNumberOfYCellsPerBlock(),
-           m_blocks->getNumberOfZCellsPerBlock());
-    printf("grid_dimension: %lu %lu %lu\n", m_blocks->getNumberOfXCells(),
-           m_blocks->getNumberOfYCells(), m_blocks->getNumberOfZCells());
-    printf("Periodicity: %d %d %d\n", m_blocks->isXPeriodic(),
-           m_blocks->isYPeriodic(), m_blocks->isZPeriodic());
-    printf("------------------------------------------------------\n");
-  }
-
   void init_blockforest(Utils::Vector3i const &n_blocks,
                         Utils::Vector3i const &n_cells_per_block,
                         Utils::Vector3i const &n_processes) {
