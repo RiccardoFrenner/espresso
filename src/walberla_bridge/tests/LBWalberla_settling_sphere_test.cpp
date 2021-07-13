@@ -42,7 +42,7 @@ Vector3i mpi_shape;
 // simulation control
 bool shortrun = false;
 bool func_test = false;
-bool file_io = true;
+bool file_io = false;
 int vtk_io_freq = 0;
 std::string base_folder = "vtk_out_SettlingSphere";
 
@@ -146,18 +146,6 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
   // BLOCK STRUCTURE SETUP //
   ///////////////////////////
 
-  Vector3i n_blocks_per_direction{5, 5, 8};
-  Vector3i n_cells_per_block_per_direction{
-      domain_size[0] / n_blocks_per_direction[0],
-      domain_size[1] / n_blocks_per_direction[1],
-      domain_size[2] / n_blocks_per_direction[2]};
-  for (uint_t i = 0; i < 3; ++i) {
-    BOOST_CHECK_MESSAGE(
-        n_cells_per_block_per_direction[i] * n_blocks_per_direction[i] ==
-            domain_size[i],
-        "Unmatching domain decomposition in direction " << i << "!");
-  }
-
   const double overlap = 1.5 * dx;
   const bool sync_shadow_owners = true;
   Vector3d initial_position{0.5 * double(domain_size[0]),
@@ -171,6 +159,11 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
     WALBERLA_LOG_INFO_ON_ROOT(" - writing logging output to file \""
                               << logging_file_name << "\"");
   }
+
+  if( vtk_io_freq > 0 )
+   {
+      WALBERLA_LOG_INFO_ON_ROOT(" - writing vtk files to folder \"" << base_folder << "\" with frequency " << vtk_io_freq);
+   }
 
   Vector3d gravitational_force{0, 0,
                                -(density_sphere - density_fluid) *
@@ -188,9 +181,9 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
                           average_force_torque_over_two_timesteps,
                           overlap / dx);
 
-  auto lb = std::make_shared<LBWalberlaD3Q19MRT>(
-      viscosity, density_fluid, n_blocks_per_direction,
-      n_cells_per_block_per_direction, mpi_shape, n_ghost_layers, pe_params);
+  auto lb = std::make_shared<LBWalberlaD3Q19MRT>(viscosity, density_fluid,
+                                                 domain_size, mpi_shape,
+                                                 n_ghost_layers, pe_params);
 
   // add the sphere
   lb->create_particle_material("mySphereMat", density_sphere, 0.5, 0.1, 0.1,
@@ -199,14 +192,19 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
                    linear_velocity, "mySphereMat");
   lb->finish_particle_adding();
 
+  // VTK
+  if (vtk_io_freq > 0) {
+    unsigned flag_observables =
+        static_cast<unsigned>(OutputVTK::density) |
+        static_cast<unsigned>(OutputVTK::velocity_vector);
+    lb->create_vtk(vtk_io_freq, 1, flag_observables, "settling_sphere", base_folder, "");
+  }
+
   WALBERLA_LOG_INFO_ON_ROOT("viscosity: " << viscosity);
   WALBERLA_LOG_INFO_ON_ROOT("density fluid: " << density_fluid);
-  WALBERLA_LOG_INFO_ON_ROOT(
-      "grid dimensions: ("
-      << n_blocks_per_direction[0] * n_cells_per_block_per_direction[0] << ", "
-      << n_blocks_per_direction[1] * n_cells_per_block_per_direction[1] << ", "
-      << n_blocks_per_direction[2] * n_cells_per_block_per_direction[2]
-      << ", ");
+  WALBERLA_LOG_INFO_ON_ROOT("grid dimensions: (" << domain_size[0] << ", "
+                                                 << domain_size[1] << ", "
+                                                 << domain_size[2] << ", ");
   WALBERLA_LOG_INFO_ON_ROOT("density sphere: " << density_sphere);
   WALBERLA_LOG_INFO_ON_ROOT("particle radius: " << 0.5 * diameter);
   auto p_mass = lb->get_particle_mass(sphere_uid);
@@ -220,6 +218,7 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
 
   if (file_io) {
     WALBERLA_ROOT_SECTION() {
+      WALBERLA_LOG_INFO_ON_ROOT("Writing to file: " << logging_file_name);
       std::ofstream file;
       file.open(logging_file_name.c_str());
       file << "#\t t\t posX\t posY\t gapZ\t velX\t velY\t velZ\n";
@@ -271,19 +270,21 @@ BOOST_AUTO_TEST_CASE(settling_sphere) {
 
     // Logging
     // ----------------------------------------------------------
-    WALBERLA_ROOT_SECTION() {
-      std::ofstream file;
-      file.open(logging_file_name.c_str(), std::ofstream::app);
+    if (file_io) {
+      WALBERLA_ROOT_SECTION() {
+        std::ofstream file;
+        file.open(logging_file_name.c_str(), std::ofstream::app);
 
-      auto scaled_position = pos / diameter;
-      auto velocity_SI = vel * dx_SI / dt_SI;
+        auto scaled_position = pos / diameter;
+        auto velocity_SI = vel * dx_SI / dt_SI;
 
-      file << i << "\t" << double(i) * dt_SI << "\t"
-           << "\t" << scaled_position[0] << "\t" << scaled_position[1] << "\t"
-           << scaled_position[2] - 0.5 << "\t" << velocity_SI[0] << "\t"
-           << velocity_SI[1] << "\t" << velocity_SI[2] << "\t" << force[0]
-           << "\t" << force[1] << "\t" << force[2] << "\n";
-      file.close();
+        file << i << "\t" << double(i) * dt_SI << "\t"
+             << "\t" << scaled_position[0] << "\t" << scaled_position[1] << "\t"
+             << scaled_position[2] - 0.5 << "\t" << velocity_SI[0] << "\t"
+             << velocity_SI[1] << "\t" << velocity_SI[2] << "\t" << force[0]
+             << "\t" << force[1] << "\t" << force[2] << "\n";
+        file.close();
+      }
     }
     // ----------------------------------------------------------
 
@@ -362,6 +363,6 @@ int main(int argc, char **argv) {
   return res;
 }
 
-#else  // ifdef LB_WALBERLA
+#else // ifdef LB_WALBERLA
 int main(int argc, char **argv) {}
 #endif // ifdef LB_WALBERLA
