@@ -43,17 +43,6 @@ public:
   };
 
   LBWalberlaD3Q19MRT(
-      double viscosity, double density, const Utils::Vector3i &n_blocks,
-      const Utils::Vector3i &n_cells_per_block,
-      const Utils::Vector3i &n_processes, int n_ghost_layers,
-      const PE_Parameters &peParams = PE_Parameters::deactivated())
-      : LBWalberlaImpl(n_blocks, n_cells_per_block, n_processes, n_ghost_layers,
-                       peParams) {
-    construct_lattice_model(viscosity);
-    setup_with_valid_lattice_model(density);
-  };
-
-  LBWalberlaD3Q19MRT(
       double viscosity, double density, const Utils::Vector3i &grid_dimensions,
       const Utils::Vector3i &node_grid, int n_ghost_layers,
       const PE_Parameters &peParams = PE_Parameters::deactivated())

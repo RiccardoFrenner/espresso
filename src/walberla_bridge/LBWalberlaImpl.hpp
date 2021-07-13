@@ -597,38 +597,6 @@ private:
   }
 
 public:
-  LBWalberlaImpl(Utils::Vector3i const &n_blocks,
-                 Utils::Vector3i const &n_cells_per_block,
-                 Utils::Vector3i const &n_processes, int n_ghost_layers,
-                 PE_Parameters pe_params = PE_Parameters::deactivated())
-      : m_n_ghost_layers(n_ghost_layers),
-        m_pe_parameters(std::move(pe_params)) {
-
-    m_grid_dimensions = Utils::Vector3i{n_blocks[0] * n_cells_per_block[0],
-                                        n_blocks[1] * n_cells_per_block[1],
-                                        n_blocks[2] * n_cells_per_block[2]};
-
-    if (m_n_ghost_layers <= 0)
-      throw std::runtime_error("At least one ghost layer must be used");
-
-    init_blockforest(n_blocks, n_cells_per_block, n_processes);
-
-    init_lb_fields();
-
-    // Set overlap for pe particle syncronization routine
-    // overlap of 1.5 * lattice grid spacing is needed for correct mapping
-    // see
-    // https://www.walberla.net/doxygen/group__pe__coupling.html#reconstruction
-    // for more information
-    double const lattice_grid_spacing = 1.0; // aka. `Lattice constant` above
-    m_pe_sync_overlap = m_pe_parameters.get_syncronization_overlap_factor() *
-                        lattice_grid_spacing;
-
-    // Init body statistics
-    // m_bodyStats =
-    //     std::make_shared<pe::BodyStatistics>(m_blocks, m_body_storage_id);
-    // (*m_bodyStats)();
-  }
 
   LBWalberlaImpl(double viscosity, const Utils::Vector3i &grid_dimensions,
                  const Utils::Vector3i &node_grid, int n_ghost_layers,
