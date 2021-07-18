@@ -35,7 +35,7 @@
 #include <fstream>
 #include <mpi.h>
 #include <sstream>
-#define BOOST_TEST_MODULE Walberla pe setters and getters test
+#define BOOST_TEST_MODULE Walberla momentum conservation test
 #define BOOST_TEST_DYN_LINK
 #include "config.hpp"
 
@@ -75,14 +75,6 @@ void write_data(uint64_t timestep, std::vector<Vector3d> vectors,
       file << vec[i] << "\t";
     }
   }
-
-  // file << "|" << std::setw(4) << timestep << " |";
-  // for (auto const &vec : vectors) {
-  //   for (uint64_t i = 0; i < 3; ++i) {
-  //     file << std::setw(8) << vec[i] << " ";
-  //   }
-  //   file << "(" << std::setw(8) << vec.norm() << ") |";
-  // }
   file << std::endl;
   file.close();
 }
@@ -213,18 +205,6 @@ BOOST_AUTO_TEST_CASE(momentum_conservation) {
       particle_force = *(lb.get_particle_force(P_UID));
       particle_pos = *(lb.get_particle_position(P_UID));
       particle_ang_vel = *(lb.get_particle_angular_velocity(P_UID));
-
-      // Check particle is far enough from boundary
-      {
-        auto p_ = particle_pos - .5 * grid_dimensions;
-        for (int i = 0; i < 3; ++i) {
-          if (p_[i] > .5 * grid_dimensions[i] - 1.5 * p_radius) {
-            std::cout << "Particle too close to boundary. Stopping test..."
-                      << std::endl;
-            break;
-          }
-        }
-      }
 
       if (fileIO) {
         write_data(i, {fluid_mom, particle_mom, particle_pos, particle_force},
