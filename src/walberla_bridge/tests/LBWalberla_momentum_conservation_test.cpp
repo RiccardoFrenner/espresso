@@ -35,7 +35,7 @@
 #include <fstream>
 #include <mpi.h>
 #include <sstream>
-#define BOOST_TEST_MODULE Walberla pe setters and getters test
+#define BOOST_TEST_MODULE Walberla momentum conservation test
 #define BOOST_TEST_DYN_LINK
 #include "config.hpp"
 
