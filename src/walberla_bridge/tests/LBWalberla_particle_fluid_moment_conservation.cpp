@@ -96,6 +96,7 @@ Vector3i grid_dimensions{54, 54, 54};
 Vector3i mpi_shape;
 int time_steps{20};
 int reset_position_first_n_timesteps = 0;
+double tol_momentum = 1e-6;
 
 // physical setup
 double viscosity{0.1};
@@ -228,82 +229,10 @@ BOOST_AUTO_TEST_CASE(momentum_conservation) {
                 MPI_COMM_WORLD);
   // Check total momentum is conserved
   auto const measured_mom = particle_mom + fluid_mom;
-  BOOST_CHECK_SMALL((initial_momentum - measured_mom).norm(), 1e-5);
-}
-
-BOOST_AUTO_TEST_CASE(multi_momentum_conservation) {
-  int rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-  int n_ghost_layers{1};
-  PE_Parameters pe_params{p_ext_forces, 1, true, do_force_avg};
-  Vector3i grid_dimension{93, 93, 93};
-  auto lb = walberla::LBWalberlaD3Q19MRT(viscosity, density, grid_dimension,
-                                         mpi_shape, n_ghost_layers, pe_params);
-
-  Vector3d center = 0.5 * grid_dimension;
-  Vector3d p1_pos = center - Vector3d{4 * p_radius, 0, 0};
-  Vector3d p2_pos = center + Vector3d{4 * p_radius, 0, 0};
-  lb.create_particle_material("Test material 2", p_density, 0.5, 0.1, 0.1, 0.24,
-                              200, 200, 0, 0);
-  lb.add_particle(0, p1_pos, p_radius, p_init_vel, "Test material 2");
-  lb.add_particle(1, p2_pos, p_radius, -p_init_vel, "Test material 2");
-  lb.finish_particle_adding();
-
-  // VTK
-  if (vtkIOFreq > 0) {
-    unsigned flag_observables =
-        static_cast<unsigned>(OutputVTK::density) |
-        static_cast<unsigned>(OutputVTK::velocity_vector);
-    lb.create_vtk(vtkIOFreq, 1, flag_observables, "multi_total_mom",
-                  base_folder, "");
-  }
-
-  // Get particle attributes
-  double p_mass = 0;
-  if (lb.is_particle_on_this_process(P_UID)) {
-    p_mass = *lb.get_particle_mass(P_UID);
-  }
-
-  // Particle mass should be the same on all processes
-  MPI_Allreduce(MPI_IN_PLACE, &p_mass, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-
-  // check fluid has no momentum
-  Vector3d fluid_mom = lb.get_momentum();
-  MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
-                MPI_COMM_WORLD);
-  BOOST_CHECK_SMALL(fluid_mom.norm(), 1e-10);
-
-  Vector3d const initial_momentum = fluid_mom;
-
-  Vector3d particle_mom_1{0, 0, 0};
-  Vector3d particle_mom_2{0, 0, 0};
-  auto t0 = std::chrono::system_clock::now();
-  for (uint64_t i = 0; i < time_steps; ++i) {
-    if (std::chrono::system_clock::now() - t0 > max_simulation_minutes) {
-      break;
-    }
-    if ((time_steps < 10) || (i % (time_steps / 10) == 0)) {
-      if (rank == 0)
-        std::cout << "Timestep: " << i << std::endl;
-    }
-    lb.integrate();
-  }
-
-  fluid_mom = lb.get_momentum();
-  if (lb.is_particle_on_this_process(0))
-    particle_mom_1 = *lb.get_particle_velocity(0) * p_mass;
-  if (lb.is_particle_on_this_process(1))
-    particle_mom_2 = *lb.get_particle_velocity(1) * p_mass;
-  MPI_Allreduce(MPI_IN_PLACE, particle_mom_1.data(), 3, MPI_DOUBLE, MPI_SUM,
-                MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, particle_mom_2.data(), 3, MPI_DOUBLE, MPI_SUM,
-                MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, fluid_mom.data(), 3, MPI_DOUBLE, MPI_SUM,
-                MPI_COMM_WORLD);
-  // Check total momentum is conserved
-  auto const measured_mom = particle_mom_1 + particle_mom_2 + fluid_mom;
-  BOOST_CHECK_SMALL((initial_momentum - measured_mom).norm(), 1e-5);
+  BOOST_CHECK_SMALL((initial_momentum - measured_mom).norm(), tol_momentum);
+  BOOST_CHECK_SMALL((initial_momentum - measured_mom).norm() /
+                        initial_momentum.norm(),
+                    tol_momentum);
 }
 
 int main(int argc, char **argv) {
@@ -378,6 +307,10 @@ int main(int argc, char **argv) {
       p_radius = std::stod(argv[++i]);
       continue;
     }
+    if (std::strcmp(argv[i], "--tol_momentum") == 0) {
+      tol_momentum = std::stod(argv[++i]);
+      continue;
+    }
     if (std::strcmp(argv[i], "--xpos") == 0) {
       p_init_pos[0] = std::stod(argv[++i]);
       continue;
@@ -424,6 +357,6 @@ int main(int argc, char **argv) {
   return res;
 }
 
-#else  // ifdef LB_WALBERLA
+#else // ifdef LB_WALBERLA
 int main(int argc, char **argv) {}
 #endif // ifdef LB_WALBERLA
