@@ -350,7 +350,7 @@ private:
       m_time_loop->add() << timeloop::Sweep(
           pe_coupling::BodyMapping<LatticeModel, Boundaries,
                                    pe_coupling::NaNDestroyer<LatticeModel>,
-                                   true>(
+                                   false>(
               m_blocks, m_pdf_field_id, m_boundary_handling_id,
               m_body_storage_id, m_global_body_storage, m_body_field_id,
               MO_BB_Flag, FormerMO_Flag, pe_coupling::selectRegularBodies),
@@ -359,7 +359,7 @@ private:
       // sweep for restoring PDFs in cells previously occupied by pe bodies
       m_time_loop->add() << timeloop::Sweep(
           pe_coupling::PDFReconstruction<LatticeModel, Boundaries,
-                                         Reconstructor, true, true>(
+                                         Reconstructor, false>(
               m_blocks, m_pdf_field_id, m_boundary_handling_id,
               m_body_storage_id, m_global_body_storage, m_body_field_id,
               *m_reconstructor, FormerMO_Flag, Fluid_flag),
