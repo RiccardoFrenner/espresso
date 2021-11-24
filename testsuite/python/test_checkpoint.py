@@ -70,9 +70,7 @@ class CheckpointTest(ut.TestCase):
         '''
         Check serialization of the LB fluid. The checkpoint file only stores
         population information, therefore calling ``lbf.load_checkpoint()``
-        erases all LBBoundaries information but doesn't remove the objects
-        contained in ``system.lbboundaries`. This test method is named such
-        that it is executed after ``self.test_lb_boundaries()``.
+        erases all boundary information.
         '''
         lbf = self.get_active_actor_of_type(espressomd.lb.LBFluidWalberla)
         cpt_mode = int("@TEST_BINARY@")
