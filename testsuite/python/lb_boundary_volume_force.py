@@ -62,8 +62,6 @@ class LBBoundaryForceCommon:
         wall_shape1 = espressomd.shapes.Wall(normal=[1, 0, 0], dist=AGRID)
         wall_shape2 = espressomd.shapes.Wall(
             normal=[-1, 0, 0], dist=-(self.system.box_l[0] - AGRID))
-        wall1 = espressomd.lbboundaries.LBBoundary(shape=wall_shape1)
-        wall2 = espressomd.lbboundaries.LBBoundary(shape=wall_shape2)
 
         fluid_nodes = count_fluid_nodes(self.lbf)
 
