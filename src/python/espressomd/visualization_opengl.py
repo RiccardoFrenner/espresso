@@ -963,7 +963,8 @@ class openGLLive():
             for j in range(int(dims[1])):
                 for k in range(int(dims[2])):
                     if self.lb[i, j, k].is_boundary:
-                        OpenGL.GL.glVertex3f(i*a+0.5, j*a+0.5, k*a+0.5)
+                        OpenGL.GL.glVertex3f(
+                            i * a + 0.5, j * a + 0.5, k * a + 0.5)
         OpenGL.GL.glEnd()
 
     def _draw_constraints(self):
